@@ -30,7 +30,7 @@ npm run dev -- --stage int        # sst dev: the function on your machine, the s
 
 **The tests only read.** The test user's group `claude-ec2-test` is read-only (`READ_ONLY_GROUPS`, `infra/stage.ts`): the API refuses it every action that changes something, before any AWS call, so a test can never stop the instance or spawn a session while it is in use. The integration tests check that refusal with requests that would be harmless even if they got through. Actions are covered by the unit tests with EC2 and SSM mocked; the instance-side scripts (`remote/`) by trying them on the instance (as root, the way SSM runs them: `base64 -w0 remote/x.sh | base64 -d | sudo bash -s -- args`), and by the CLI.
 
-Test user: `claude-ec2-test@albedoonline.com`, group `claude-ec2-test`, password in the SST secret `TestUserPassword` of `int`. Created once with admin credentials (`scripts/setup-access.sh`, from the [test-user template](https://github.com/jakubprzybytek/agent-playbook/blob/main/skills/continuous-delivery/templates/test-user.md)).
+Test user: `claude-ec2-test@albedoonline.com`, group `claude-ec2-test`, password in the SST secret `TestUserPassword` of `int`. Created once with admin credentials (`scripts/setup-access.sh`; the password is then set on the instance and stored with `sst secret set`, from the [test-user template](https://github.com/jakubprzybytek/agent-playbook/blob/main/skills/continuous-delivery/templates/test-user.md)).
 
 ## Delivery
 
