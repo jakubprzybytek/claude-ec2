@@ -37,6 +37,12 @@
       "Resource": "arn:aws:logs:eu-west-1:ACCOUNT_ID:log-group:*"
     },
     {
+      "Sid": "ApiAccessLogDelivery",
+      "Effect": "Allow",
+      "Action": ["logs:CreateLogDelivery", "logs:GetLogDelivery", "logs:UpdateLogDelivery", "logs:DeleteLogDelivery", "logs:ListLogDeliveries"],
+      "Resource": "*"
+    },
+    {
       "Sid": "ApiGateway",
       "Effect": "Allow",
       "Action": ["apigateway:*"],

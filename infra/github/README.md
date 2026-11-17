@@ -19,7 +19,7 @@ This repo deploys to AWS following the [aws-github-deploy standard](https://gith
 - `Identity`, `SstState`: SST's account lookup and state parameters.
 - `Buckets`: the site's bucket (`claude-ec2-*`) and SST's asset buckets.
 - `Functions`, `Logs`: the API function (`claude-ec2-*`) and its log groups.
-- `ApiGateway`: the HTTP API.
+- `ApiGateway`: the HTTP API. `ApiAccessLogDelivery`: its access logs (these actions only take `Resource: "*"`; added after the first deploy failed on `logs:CreateLogDelivery`).
 - `Edge`: CloudFront (Router, security headers), its key-value store, the certificate and the DNS records.
 - `Auth`: the stage's app client in the shared pool `eu-west-1_IVai0KEAA` (no user or group management).
 - `Ec2Read`: reading EC2 resources (describe actions take no resource scope), for the launch template.
