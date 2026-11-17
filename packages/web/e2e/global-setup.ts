@@ -1,5 +1,5 @@
 // Signs the test user in once through the app's login form and saves the session for all tests. Run inside
-// `sst shell` so the test user is available: npx sst shell --stage dev -- npm run test:e2e
+// `sst shell` so the test user is available: npx sst shell --stage int -- npm run test:e2e
 
 import { chromium, type FullConfig } from "@playwright/test";
 import { Resource } from "sst";

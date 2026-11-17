@@ -1,7 +1,7 @@
-# Continuous delivery per agent-playbook/continuous-delivery, with this repo's deviation (docs/development.md):
-# no int stage. There is only one instance and the tests must never stop or start it, so the pipeline goes from the
-# checks straight to prod, checks prod without a login, then tags the release.
-# From main (every push, or a manual run with main selected): checks -> deploy prod -> smoke checks -> tag vM.N.
+# Continuous delivery per agent-playbook/continuous-delivery. Deviation (docs/development.md): no dev stage, and the
+# tests on int only read, since int controls the one real instance too (the test user's group is read-only).
+# From main (every push, or a manual run with main selected): checks -> deploy int -> integration + E2E tests
+#   -> tag the next release vM.N -> deploy prod from the tag -> smoke checks without a login.
 # From any other branch or tag (manual run, "Use workflow from"): the same, without a new version or tag
 # (rollback: pick the release tag).
 # Needs the repo secret AWS_ACCOUNT_ID and variable AWS_REGION (aws-github-deploy's setup-role.sh sets both).
@@ -31,14 +31,17 @@ jobs:
     name: Checks
     uses: ./.github/workflows/checks.yaml
 
-  prod:
-    name: Deploy prod
+  int:
+    name: Deploy int + test
     needs: checks
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
       contents: write # push the release tag
       id-token: write # OIDC -> AWS
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      release: ${{ steps.version.outputs.release }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -84,23 +87,25 @@ jobs:
           role-session-name: gh-claude-ec2-${{ github.run_id }}
           mask-aws-account-id: true
 
-      - name: Deploy prod
-        run: npx sst deploy --stage prod
+      - name: Deploy int
+        run: npx sst deploy --stage int
         env:
           APP_VERSION: ${{ steps.version.outputs.version }}
 
-      # No login on prod: the site answers with the app, the API refuses a request without a token.
-      - name: Smoke checks
-        env:
-          VERSION: ${{ steps.version.outputs.version }}
-        run: |
-          site=$(jq -r .siteUrl .sst/outputs.json)
-          for i in 1 2 3 4 5 6; do curl -fsS "$site/" -o index.html && break; sleep 10; done
-          grep -q "<title>Claude EC2</title>" index.html
-          js=$(grep -o 'assets/index-[^"]*\.js' index.html | head -1)
-          curl -fsS "$site/$js" | grep -q "$VERSION" || { echo "the site does not show $VERSION"; exit 1; }
-          code=$(curl -s -o /dev/null -w '%{http_code}' "$site/api/status")
-          [ "$code" = 401 ] || { echo "GET /api/status without a token answered $code, expected 401"; exit 1; }
+      # Inside sst shell: the tests get the stage's URLs and the test user (Resource.TestUser, TestUserPassword).
+      # Read-only: int controls the real instance (docs/development.md).
+      - name: Integration tests
+        run: npx sst shell --stage int -- npm run test:integration
+      - run: npx playwright install --with-deps chromium
+      - name: E2E tests
+        run: npx sst shell --stage int -- npm run test:e2e
+
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: playwright-results
+          path: test-results/
+          retention-days: 3
 
       - name: Tag ${{ steps.version.outputs.version }}
         if: steps.version.outputs.release == 'true'
@@ -112,3 +117,45 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git tag -a "$VERSION" -m "Release $VERSION"
           git push origin "$VERSION"
+
+  prod:
+    name: Deploy prod
+    needs: int
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      id-token: write # OIDC -> AWS
+    env:
+      VERSION: ${{ needs.int.outputs.version }}
+    steps:
+      # A release deploys from its tag; any other ref from the commit int was tested on.
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.int.outputs.release == 'true' && format('refs/tags/{0}', needs.int.outputs.version) || github.sha }}
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/GitHub-claude-ec2
+          aws-region: ${{ vars.AWS_REGION }}
+          role-session-name: gh-claude-ec2-${{ github.run_id }}
+          mask-aws-account-id: true
+      - name: Deploy prod
+        run: npx sst deploy --stage prod
+        env:
+          APP_VERSION: ${{ env.VERSION }}
+
+      # No login on prod: the site answers with the app, the API refuses a request without a token.
+      - name: Smoke checks
+        run: |
+          site=$(jq -r .siteUrl .sst/outputs.json)
+          for i in 1 2 3 4 5 6; do curl -fsS "$site/" -o index.html && break; sleep 10; done
+          grep -q "<title>Claude EC2</title>" index.html
+          js=$(grep -o 'assets/index-[^"]*\.js' index.html | head -1)
+          curl -fsS "$site/$js" | grep -q "$VERSION" || { echo "the site does not show $VERSION"; exit 1; }
+          code=$(curl -s -o /dev/null -w '%{http_code}' "$site/api/status")
+          [ "$code" = 401 ] || { echo "GET /api/status without a token answered $code, expected 401"; exit 1; }

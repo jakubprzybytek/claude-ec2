@@ -2,7 +2,7 @@
 
 export const isProd = $app.stage === "prod";
 
-/** The instance every stage controls: there is only one, so dev controls the real one too (read-only in the tests). */
+/** The instance every stage controls: there is only one, so int controls the real one too (read-only in the tests). */
 export const INSTANCE_NAME_TAG = "claude-code";
 
 // Shared, manually managed pool (AlbedoUserPool) used by several apps; anyone can sign up to it, so the API checks

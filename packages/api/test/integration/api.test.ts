@@ -1,5 +1,5 @@
 // Against a deployed stage, as the test user (read-only group), inside `sst shell`:
-//   npx sst shell --stage dev -- npm run test:integration
+//   npx sst shell --stage int -- npm run test:integration
 // The stage controls the real instance, so these tests only read. The write calls below are probes that must be
 // refused for the test group; each is also harmless if it ever got through (a resize of a running instance is
 // refused by EC2's state check, an invalid session name by validation).

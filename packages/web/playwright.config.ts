@@ -1,7 +1,7 @@
 import { defineConfig } from "@playwright/test";
 
-// Inside `sst shell` (the login uses the stage's test user): npx sst shell --stage dev -- npm run test:e2e
-// Against the deployed dev site; WEB_URL overrides it (e.g. http://localhost:5173 with `npm run dev`).
+// Inside `sst shell` (the login uses the stage's test user): npx sst shell --stage int -- npm run test:e2e
+// Against the deployed int site; WEB_URL overrides it (e.g. http://localhost:5173 with `npm run dev`).
 // The tests only read: the test user's group is read-only (docs/development.md).
 const testUser = process.env["SST_RESOURCE_TestUser"]; // set by `sst shell`
 const baseURL: string | undefined = process.env["WEB_URL"] ?? (testUser ? (JSON.parse(testUser) as { siteUrl: string }).siteUrl : undefined);
