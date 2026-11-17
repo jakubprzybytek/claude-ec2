@@ -15,7 +15,8 @@ ME=${1:?usage: scripts/setup-access.sh <your Cognito username or email>}
 POOL=eu-west-1_IVai0KEAA
 TEST_USER=claude-ec2-test@albedoonline.com
 export AWS_REGION=eu-west-1 AWS_PAGER=""
-SETUP_ROLE=~/.claude/skills/aws-github-deploy/scripts/setup-role.sh
+# From the installed skills, or SETUP_ROLE=<agent-playbook clone>/skills/aws-github-deploy/scripts/setup-role.sh
+SETUP_ROLE=${SETUP_ROLE:-~/.claude/skills/aws-github-deploy/scripts/setup-role.sh}
 
 [ -f sst.config.ts ] && [ -f infra/github/deploy-policy.json ] || { echo "Run from the claude-ec2 repo root" >&2; exit 1; }
 [ -x "$SETUP_ROLE" ] || [ -f "$SETUP_ROLE" ] || { echo "Missing $SETUP_ROLE (agent-playbook's scripts/install.sh)" >&2; exit 1; }
