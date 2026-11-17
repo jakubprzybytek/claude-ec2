@@ -1,0 +1,50 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "Logs",
+      "Effect": "Allow",
+      "Action": ["logs:CreateLogGroup", "logs:CreateLogStream", "logs:PutLogEvents"],
+      "Resource": "arn:aws:logs:eu-west-1:ACCOUNT_ID:log-group:*"
+    },
+    {
+      "Sid": "InstanceRead",
+      "Effect": "Allow",
+      "Action": ["ec2:DescribeInstances", "ssm:DescribeInstanceInformation", "ssm:GetCommandInvocation"],
+      "Resource": "*"
+    },
+    {
+      "Sid": "InstanceControl",
+      "Effect": "Allow",
+      "Action": ["ec2:StartInstances", "ec2:StopInstances", "ec2:ModifyInstanceAttribute"],
+      "Resource": "arn:aws:ec2:eu-west-1:ACCOUNT_ID:instance/*",
+      "Condition": { "StringEquals": { "aws:ResourceTag/Name": "claude-code" } }
+    },
+    {
+      "Sid": "InstanceCommands",
+      "Effect": "Allow",
+      "Action": ["ssm:SendCommand"],
+      "Resource": "arn:aws:ec2:eu-west-1:ACCOUNT_ID:instance/*",
+      "Condition": { "StringEquals": { "ssm:resourceTag/Name": "claude-code" } }
+    },
+    {
+      "Sid": "ShellScriptDocument",
+      "Effect": "Allow",
+      "Action": ["ssm:SendCommand"],
+      "Resource": "arn:aws:ssm:eu-west-1::document/AWS-RunShellScript"
+    },
+    {
+      "Sid": "EncryptedVolumes",
+      "Effect": "Allow",
+      "Action": ["kms:CreateGrant", "kms:Decrypt", "kms:DescribeKey", "kms:GenerateDataKeyWithoutPlaintext", "kms:ReEncryptFrom", "kms:ReEncryptTo"],
+      "Resource": "arn:aws:kms:eu-west-1:ACCOUNT_ID:key/*",
+      "Condition": { "StringEquals": { "kms:ViaService": "ec2.eu-west-1.amazonaws.com" } }
+    },
+    {
+      "Sid": "SstDev",
+      "Effect": "Allow",
+      "Action": ["appsync:EventConnect", "appsync:EventPublish", "appsync:EventSubscribe"],
+      "Resource": "*"
+    }
+  ]
+}

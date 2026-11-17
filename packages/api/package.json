@@ -1,0 +1,10 @@
+{
+  "name": "@claude-ec2/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@aws-sdk/client-ec2": "^3.1170.0",
+    "@aws-sdk/client-ssm": "^3.1170.0"
+  }
+}

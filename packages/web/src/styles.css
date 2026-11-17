@@ -1,0 +1,331 @@
+:root {
+  --bg: #f6f5f1;
+  --card: #ffffff;
+  --text: #1f1e1b;
+  --muted: #6b6860;
+  --border: #e3e0d8;
+  --accent: #c96442;
+  --accent-text: #ffffff;
+  --ok: #2f7d4f;
+  --busy: #a86b00;
+  --off: #7a776f;
+  --danger: #b3261e;
+  --code: #f0eee8;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-size: 16px;
+  line-height: 1.45;
+  color: var(--text);
+  background: var(--bg);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #1b1a18;
+    --card: #262522;
+    --text: #ece9e2;
+    --muted: #a39f95;
+    --border: #3a3834;
+    --accent: #d97757;
+    --ok: #5cbf86;
+    --busy: #e0a53a;
+    --off: #8d897f;
+    --danger: #f2756b;
+    --code: #1f1e1c;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+}
+
+a {
+  color: var(--accent);
+}
+
+.page {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 12px 16px 32px;
+}
+
+.top {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+
+.top h1 {
+  font-size: 1.35rem;
+  margin: 0 auto 0 0;
+}
+
+main {
+  display: grid;
+  gap: 14px;
+}
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px 16px;
+  min-width: 0;
+}
+
+.card > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.card h2 {
+  font-size: 1.05rem;
+  margin: 0;
+}
+
+.facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 2px 14px;
+  margin: 8px 0;
+}
+
+.facts dt {
+  color: var(--muted);
+}
+
+.facts dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.actions,
+.inline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+
+.grow {
+  flex: 1;
+  min-width: 0;
+}
+
+button,
+.button {
+  font: inherit;
+  padding: 7px 14px;
+  min-height: 38px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--text);
+  cursor: pointer;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+}
+
+button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+button.primary,
+.button {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-text);
+}
+
+button.danger {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
+button.link {
+  background: none;
+  border: none;
+  color: var(--accent);
+  padding: 0;
+  min-height: 0;
+}
+
+input,
+select,
+textarea {
+  font: inherit;
+  padding: 7px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  max-width: 100%;
+}
+
+.field {
+  display: grid;
+  gap: 4px;
+  margin-bottom: 10px;
+}
+
+.field > span {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.badge {
+  font-size: 0.8rem;
+  padding: 2px 9px;
+  border-radius: 999px;
+  border: 1px solid currentColor;
+  white-space: nowrap;
+}
+
+.badge.ok {
+  color: var(--ok);
+}
+
+.badge.busy {
+  color: var(--busy);
+}
+
+.badge.off {
+  color: var(--off);
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.small {
+  font-size: 0.875rem;
+}
+
+.center {
+  text-align: center;
+}
+
+.mono,
+pre {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.85rem;
+}
+
+.error {
+  color: var(--danger);
+}
+
+.stops {
+  margin: 0;
+}
+
+.sessions {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.sessions li {
+  padding: 10px 0;
+  border-top: 1px solid var(--border);
+}
+
+.sessions li:first-child {
+  border-top: none;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  justify-content: space-between;
+}
+
+.new-session {
+  background: var(--bg);
+  border-radius: 10px;
+  padding: 12px;
+  margin-bottom: 10px;
+}
+
+.new-session select,
+.new-session input,
+.new-session textarea {
+  width: 100%;
+  background: var(--card);
+}
+
+.output {
+  background: var(--code);
+  border-radius: 8px;
+  padding: 10px;
+  margin: 4px 0 0;
+  max-height: 420px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.stderr {
+  color: var(--danger);
+}
+
+footer {
+  margin-top: 24px;
+  text-align: center;
+}
+
+/* Login (LoginForm.tsx) */
+.gate {
+  max-width: 380px;
+  margin: 10vh auto 0;
+  padding: 0 16px;
+}
+
+.gate h1 {
+  font-size: 1.4rem;
+}
+
+.login {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 16px;
+  display: grid;
+  gap: 4px;
+}
+
+.login h2 {
+  font-size: 1.1rem;
+  margin: 0 0 8px;
+}
+
+.login input {
+  width: 100%;
+}
+
+.login button[type="submit"] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-text);
+  justify-content: center;
+  margin-top: 6px;
+}
+
+.login button.link {
+  justify-self: start;
+  margin-top: 8px;
+}

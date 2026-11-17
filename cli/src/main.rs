@@ -1,4 +1,6 @@
 //! claude-ec2: manage the Claude Code EC2 instance through the AWS CLI and Session Manager.
+//!
+//! The scripts it runs on the instance (remote/*.sh) are shared with the web app's API, so both behave the same.
 
 use anyhow::{bail, Context, Result};
 use base64::Engine;
@@ -13,15 +15,32 @@ const NAME_TAG: &str = "claude-code";
 const LAUNCH_TEMPLATE: &str = "claude-code-ubuntu-arm";
 const TMUX_ATTACH: &str = "sudo -u ubuntu tmux attach -t claude";
 
+const STATUS_SH: &str = include_str!("../../remote/status.sh");
+const SNOOZE_SH: &str = include_str!("../../remote/snooze.sh");
+const EXEC_SH: &str = include_str!("../../remote/exec.sh");
+const SESSIONS_SH: &str = include_str!("../../remote/sessions.sh");
+const CONVERSATIONS_SH: &str = include_str!("../../remote/conversations.sh");
+const SPAWN_SH: &str = include_str!("../../remote/spawn.sh");
+const CLOSE_SH: &str = include_str!("../../remote/close.sh");
+
 #[derive(Parser)]
-#[command(name = "claude-ec2", version, about = "Manage the Claude Code EC2 instance")]
+#[command(
+    name = "claude-ec2",
+    version,
+    about = "Manage the Claude Code EC2 instance"
+)]
 struct Cli {
     /// Instance ID (default: the only non-terminated instance tagged Name=claude-code)
     #[arg(short, long, global = true, env = "CLAUDE_EC2_INSTANCE")]
     instance: Option<String>,
 
     /// AWS region
-    #[arg(long, global = true, env = "CLAUDE_EC2_REGION", default_value = "eu-west-1")]
+    #[arg(
+        long,
+        global = true,
+        env = "CLAUDE_EC2_REGION",
+        default_value = "eu-west-1"
+    )]
     region: String,
 
     /// AWS CLI profile (default: AWS_PROFILE / the CLI's default)
@@ -53,6 +72,29 @@ enum Cmd {
         #[arg(default_value_t = 2)]
         hours: u32,
     },
+    /// List the Claude Code sessions (main and spawned) with their claude.ai links
+    Sessions,
+    /// Start a new Claude Code session with Remote Control, to open in claude.ai or the Claude app
+    Spawn {
+        /// Session name (letters, digits, - and _)
+        name: String,
+        /// Folder to start in (default: /home/ubuntu)
+        #[arg(long)]
+        folder: Option<String>,
+        /// Fork this conversation (an id from `claude-ec2 conversations`) instead of starting a new one
+        #[arg(long)]
+        fork: Option<String>,
+        /// First prompt
+        #[arg(trailing_var_arg = true)]
+        prompt: Vec<String>,
+    },
+    /// Close a spawned session (the conversation is kept)
+    Close { name: String },
+    /// List recent conversations (to fork) and the folders a session can start in
+    Conversations {
+        #[arg(long, default_value_t = 14)]
+        days: u32,
+    },
     /// Run a command as ubuntu on the instance and print its output
     Exec {
         #[arg(required = true, trailing_var_arg = true, allow_hyphen_values = true)]
@@ -82,7 +124,8 @@ struct Aws {
 impl Aws {
     fn command(&self, args: &[&str]) -> Command {
         let mut c = Command::new("aws");
-        c.args(args).args(["--region", &self.region, "--output", "json"]);
+        c.args(args)
+            .args(["--region", &self.region, "--output", "json"]);
         if let Some(p) = &self.profile {
             c.args(["--profile", p]);
         }
@@ -137,13 +180,21 @@ struct Instance {
 
 impl Instance {
     fn from_json(v: &Value) -> Instance {
-        let s = |p: &str| v.pointer(p).and_then(Value::as_str).unwrap_or("-").to_string();
+        let s = |p: &str| {
+            v.pointer(p)
+                .and_then(Value::as_str)
+                .unwrap_or("-")
+                .to_string()
+        };
         Instance {
             id: s("/InstanceId"),
             state: s("/State/Name"),
             instance_type: s("/InstanceType"),
             zone: s("/Placement/AvailabilityZone"),
-            public_ip: v.pointer("/PublicIpAddress").and_then(Value::as_str).map(String::from),
+            public_ip: v
+                .pointer("/PublicIpAddress")
+                .and_then(Value::as_str)
+                .map(String::from),
             launch_time: s("/LaunchTime"),
         }
     }
@@ -198,7 +249,9 @@ fn ssm_online(aws: &Aws, id: &str) -> Result<bool> {
         "--filters",
         &format!("Key=InstanceIds,Values={id}"),
     ])?;
-    Ok(v.pointer("/InstanceInformationList/0/PingStatus").and_then(Value::as_str) == Some("Online"))
+    Ok(v.pointer("/InstanceInformationList/0/PingStatus")
+        .and_then(Value::as_str)
+        == Some("Online"))
 }
 
 fn wait_until(what: &str, timeout: Duration, mut done: impl FnMut() -> Result<bool>) -> Result<()> {
@@ -235,7 +288,9 @@ fn ensure_running(aws: &Aws, id: &str) -> Result<()> {
     wait_until("the instance to run", Duration::from_secs(300), || {
         Ok(describe(aws, id)?.state == "running")
     })?;
-    wait_until("Session Manager", Duration::from_secs(300), || ssm_online(aws, id))
+    wait_until("Session Manager", Duration::from_secs(300), || {
+        ssm_online(aws, id)
+    })
 }
 
 /// For commands that shouldn't start the instance on their own.
@@ -257,11 +312,24 @@ struct RemoteResult {
     stderr: String,
 }
 
-/// Runs a bash script as root through SSM Run Command and waits for the result.
-fn run_remote(aws: &Aws, id: &str, script: &str) -> Result<RemoteResult> {
+fn b64(s: &str) -> String {
+    base64::engine::general_purpose::STANDARD.encode(s)
+}
+
+/// The command line that runs `script` with `args` (as packages/api/src/remote.ts builds it).
+fn command_line(script: &str, args: &[&str]) -> String {
     // Base64 sidesteps quoting through the CLI and the AWS-RunShellScript document (which uses sh)
-    let b64 = base64::engine::general_purpose::STANDARD.encode(script);
-    let params = json!({ "commands": [format!("echo {b64} | base64 -d | bash")] }).to_string();
+    let mut line = format!("echo {} | base64 -d | bash -s --", b64(script));
+    for a in args {
+        line.push(' ');
+        line.push_str(&shell_quote(a));
+    }
+    line
+}
+
+/// Runs a bash script as root through SSM Run Command and waits for the result.
+fn run_remote(aws: &Aws, id: &str, script: &str, args: &[&str]) -> Result<RemoteResult> {
+    let params = json!({ "commands": [command_line(script, args)] }).to_string();
     let sent = aws.json(&[
         "ssm",
         "send-command",
@@ -306,7 +374,10 @@ fn run_remote(aws: &Aws, id: &str, script: &str) -> Result<RemoteResult> {
             .collect();
         return Ok(RemoteResult {
             code: v["ResponseCode"].as_i64().unwrap_or(-1),
-            stdout: v["StandardOutputContent"].as_str().unwrap_or("").to_string(),
+            stdout: v["StandardOutputContent"]
+                .as_str()
+                .unwrap_or("")
+                .to_string(),
             stderr,
             status,
         });
@@ -332,9 +403,35 @@ fn start_session(aws: &Aws, id: &str, document: &str, parameters: Value) -> Resu
     ])
 }
 
+/// Prints a script's output and fails with its error, as the CLI's other commands do.
+fn finish(r: &RemoteResult) -> Result<()> {
+    print!("{}", r.stdout);
+    eprint!("{}", r.stderr);
+    if r.status != "Success" {
+        std::process::exit(if r.code > 0 { r.code as i32 } else { 1 });
+    }
+    Ok(())
+}
+
+/// The JSON a script printed.
+fn remote_json(r: &RemoteResult) -> Result<Value> {
+    if r.status != "Success" {
+        bail!("{}", r.stderr.trim());
+    }
+    serde_json::from_str(&r.stdout).context("unexpected output from the instance")
+}
+
+fn hm(seconds: i64) -> String {
+    let s = seconds.max(0);
+    format!("{}h {:02}m", s / 3600, s % 3600 / 60)
+}
+
 fn cmd_status(aws: &Aws, id: &str) -> Result<()> {
     let inst = describe(aws, id)?;
-    println!("Instance   {} ({}, {})", inst.id, inst.instance_type, inst.zone);
+    println!(
+        "Instance   {} ({}, {})",
+        inst.id, inst.instance_type, inst.zone
+    );
     println!("State      {}", inst.state);
     if inst.state != "running" {
         return Ok(());
@@ -345,41 +442,128 @@ fn cmd_status(aws: &Aws, id: &str) -> Result<()> {
         println!("Session Manager: not online yet");
         return Ok(());
     }
-    let r = run_remote(
+    let v = remote_json(&run_remote(aws, id, STATUS_SH, &[])?)?;
+    let now = v["now"].as_i64().unwrap_or(0);
+    let c = &v["claude"];
+    println!(
+        "Claude     tmux session {}, {} attached, {} spawned",
+        if c["running"].as_bool() == Some(true) {
+            "running"
+        } else {
+            "missing"
+        },
+        c["clients"].as_i64().unwrap_or(0),
+        c["spawned"].as_i64().unwrap_or(0)
+    );
+    let a = &v["autostop"];
+    if a["installed"].as_bool() != Some(true) {
+        println!("Auto-stop  not installed");
+        return Ok(());
+    }
+    let mut line = format!(
+        "Auto-stop  uptime {} (cap {}h) | load15 {:.2}",
+        hm(now - v["bootTime"].as_i64().unwrap_or(now)),
+        a["maxUptimeHours"],
+        v["load"][2].as_f64().unwrap_or(0.0)
+    );
+    if let Some(last) = a["lastActivity"].as_i64() {
+        line += &format!(
+            " | last Claude activity {} min ago (idle limit {} min)",
+            (now - last) / 60,
+            a["idleMinutes"]
+        );
+    }
+    if let Some(until) = a["snoozedUntilText"].as_str() {
+        line += &format!(" | snoozed until {until}");
+    }
+    println!("{line}");
+    let stops = a["stopsAt"].as_i64().unwrap_or(now);
+    let approx = if a["estimate"].as_bool() == Some(true) {
+        "~"
+    } else {
+        ""
+    };
+    println!(
+        "Stops in   {approx}{} (at {}), {}",
+        hm(stops - now),
+        a["stopsAtText"].as_str().unwrap_or("?"),
+        a["reason"].as_str().unwrap_or("")
+    );
+    Ok(())
+}
+
+fn cmd_sessions(aws: &Aws, id: &str) -> Result<()> {
+    let v = remote_json(&run_remote(aws, id, SESSIONS_SH, &[])?)?;
+    let sessions = v["sessions"].as_array().cloned().unwrap_or_default();
+    if sessions.is_empty() {
+        println!("No Claude Code sessions");
+    }
+    for s in sessions {
+        let name = if s["main"].as_bool() == Some(true) {
+            "main (claude)"
+        } else {
+            s["name"].as_str().unwrap_or("?")
+        };
+        println!(
+            "{name:<24} {:<10} {}",
+            s["state"].as_str().unwrap_or(""),
+            s["folder"]
+                .as_str()
+                .unwrap_or("")
+                .replacen("/home/ubuntu", "~", 1)
+        );
+        println!(
+            "{:<24} {}",
+            "",
+            s["url"].as_str().unwrap_or("(no claude.ai link yet)")
+        );
+    }
+    Ok(())
+}
+
+fn cmd_conversations(aws: &Aws, id: &str, days: u32) -> Result<()> {
+    let v = remote_json(&run_remote(
         aws,
         id,
-        r#"echo "Claude     tmux session $(sudo -u ubuntu tmux has-session -t claude 2>/dev/null && echo running || echo missing), $(sudo -u ubuntu tmux list-clients -t claude 2>/dev/null | wc -l) attached"
-if command -v claude-autostop >/dev/null; then claude-autostop status | sed 's/^/Auto-stop  /'; else echo "Auto-stop  not installed"; exit 0; fi
-# Time left, mirroring claude-autostop's rules (it runs every 5 min, then waits GRACE_MINUTES)
-IDLE_MINUTES=60; MAX_UPTIME_HOURS=8; GRACE_MINUTES=5
-[ -f /etc/default/claude-autostop ] && . /etc/default/claude-autostop
-now=$(date +%s); boot=$(( now - $(cut -d. -f1 /proc/uptime) ))
-left() { local s=$(( $1 - now )); [ $s -lt 0 ] && s=0; printf '%dh %02dm (at %s)' $((s/3600)) $((s%3600/60)) "$(date -d @$1 '+%H:%M %Z')"; }
-max() { [ "$1" -gt "$2" ] && echo "$1" || echo "$2"; }
-if [ -f /run/systemd/shutdown/scheduled ]; then
-  at=$(( $(sed -n 's/^USEC=//p' /run/systemd/shutdown/scheduled) / 1000000 ))
-  echo "Stops in   $(left $at), shutdown already scheduled"
-  exit 0
-fi
-snooze=$(cat /run/claude-autostop.snooze 2>/dev/null || echo 0)
-last=$(find /home/ubuntu/.claude/projects -name '*.jsonl' -printf '%T@\n' 2>/dev/null | sort -n | tail -1)
-last=${last%.*}; last=${last:-0}
-idle=$(max $(max $(( last + IDLE_MINUTES * 60 )) $(( boot + IDLE_MINUTES * 60 ))) "$snooze")
-idle=$(max "$idle" "$now")
-at=$idle; why="if Claude stays idle"
-if [ "$MAX_UPTIME_HOURS" -gt 0 ]; then
-  cap=$(max $(( boot + MAX_UPTIME_HOURS * 3600 )) "$snooze")
-  [ "$cap" -le "$at" ] && { at=$cap; why="${MAX_UPTIME_HOURS}h uptime cap"; }
-fi
-echo "Stops in   ~$(left $(( at + GRACE_MINUTES * 60 ))), $why""#,
-    )?;
-    print!("{}", r.stdout);
+        CONVERSATIONS_SH,
+        &[&days.to_string()],
+    )?)?;
+    for c in v["conversations"].as_array().cloned().unwrap_or_default() {
+        let title = c["title"]
+            .as_str()
+            .or(c["firstPrompt"].as_str())
+            .unwrap_or("");
+        let title: String = title.chars().take(60).collect();
+        println!(
+            "{}  {:<60}  {}",
+            c["id"].as_str().unwrap_or(""),
+            title.replace('\n', " "),
+            c["folder"]
+                .as_str()
+                .unwrap_or("")
+                .replacen("/home/ubuntu", "~", 1)
+        );
+    }
+    println!(
+        "\nFolders: {}",
+        v["folders"]
+            .as_array()
+            .map(|f| f
+                .iter()
+                .filter_map(Value::as_str)
+                .collect::<Vec<_>>()
+                .join("  "))
+            .unwrap_or_default()
+    );
     Ok(())
 }
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
-    let aws = Aws { region: cli.region, profile: cli.profile };
+    let aws = Aws {
+        region: cli.region,
+        profile: cli.profile,
+    };
 
     if let Cmd::Launch { instance_type } = &cli.cmd {
         let template = format!("LaunchTemplateName={LAUNCH_TEMPLATE}");
@@ -388,7 +572,10 @@ fn main() -> Result<()> {
             args.extend(["--instance-type", t]);
         }
         let v = aws.json(&args)?;
-        let id = v.pointer("/Instances/0/InstanceId").and_then(Value::as_str).unwrap_or("?");
+        let id = v
+            .pointer("/Instances/0/InstanceId")
+            .and_then(Value::as_str)
+            .unwrap_or("?");
         println!("Launched {id}. Setup takes about 3 minutes; then run:");
         println!("  claude-ec2 --instance {id} attach");
         println!("and complete the theme choice and /login once.");
@@ -415,37 +602,71 @@ fn main() -> Result<()> {
         Cmd::Attach => {
             ensure_running(&aws, &id)?;
             println!("Attaching to Claude Code (detach with Ctrl-b d)");
-            start_session(&aws, &id, "AWS-StartInteractiveCommand", json!({ "command": [TMUX_ATTACH] }))?;
+            start_session(
+                &aws,
+                &id,
+                "AWS-StartInteractiveCommand",
+                json!({ "command": [TMUX_ATTACH] }),
+            )?;
         }
         Cmd::Shell => {
             ensure_running(&aws, &id)?;
-            start_session(&aws, &id, "AWS-StartInteractiveCommand", json!({ "command": ["sudo -iu ubuntu"] }))?;
+            start_session(
+                &aws,
+                &id,
+                "AWS-StartInteractiveCommand",
+                json!({ "command": ["sudo -iu ubuntu"] }),
+            )?;
         }
         Cmd::Snooze { hours } => {
             require_running(&aws, &id)?;
-            let r = run_remote(
-                &aws,
-                &id,
-                &format!("command -v claude-autostop >/dev/null || {{ echo 'auto-stop is not installed on this instance' >&2; exit 1; }}\nclaude-autostop snooze {hours}"),
-            )?;
-            print!("{}", r.stdout);
-            eprint!("{}", r.stderr);
-            if r.status != "Success" {
-                std::process::exit(1);
-            }
+            finish(&run_remote(&aws, &id, SNOOZE_SH, &[&hours.to_string()])?)?;
         }
         Cmd::Exec { command } => {
             require_running(&aws, &id)?;
-            let script = format!(
-                "cd /home/ubuntu && sudo -u ubuntu -H bash -lc {}",
-                shell_quote(&command.join(" "))
-            );
-            let r = run_remote(&aws, &id, &script)?;
-            print!("{}", r.stdout);
-            eprint!("{}", r.stderr);
-            if r.status != "Success" {
-                std::process::exit(if r.code > 0 { r.code as i32 } else { 1 });
-            }
+            finish(&run_remote(
+                &aws,
+                &id,
+                EXEC_SH,
+                &[&b64(&command.join(" "))],
+            )?)?;
+        }
+        Cmd::Sessions => {
+            require_running(&aws, &id)?;
+            cmd_sessions(&aws, &id)?;
+        }
+        Cmd::Spawn {
+            name,
+            folder,
+            fork,
+            prompt,
+        } => {
+            ensure_running(&aws, &id)?;
+            let prompt = prompt.join(" ");
+            let prompt = if prompt.is_empty() {
+                String::new()
+            } else {
+                b64(&prompt)
+            };
+            let folder = folder.unwrap_or_else(|| "/home/ubuntu".into());
+            let fork = fork.unwrap_or_else(|| "-".into());
+            remote_json(&run_remote(
+                &aws,
+                &id,
+                SPAWN_SH,
+                &[&name, &folder, &fork, &prompt],
+            )?)?;
+            println!("Started {name}; it shows up in claude.ai/code and the Claude app in a few seconds.");
+            sleep(Duration::from_secs(8));
+            cmd_sessions(&aws, &id)?;
+        }
+        Cmd::Close { name } => {
+            require_running(&aws, &id)?;
+            finish(&run_remote(&aws, &id, CLOSE_SH, &[&name])?)?;
+        }
+        Cmd::Conversations { days } => {
+            require_running(&aws, &id)?;
+            cmd_conversations(&aws, &id, days)?;
         }
         Cmd::Forward { port, local_port } => {
             ensure_running(&aws, &id)?;
@@ -466,7 +687,10 @@ fn main() -> Result<()> {
         Cmd::Resize { instance_type } => {
             let inst = describe(&aws, &id)?;
             if inst.state != "stopped" {
-                bail!("{id} is {}; stop it first (`claude-ec2 stop --wait`)", inst.state);
+                bail!(
+                    "{id} is {}; stop it first (`claude-ec2 stop --wait`)",
+                    inst.state
+                );
             }
             aws.json(&[
                 "ec2",
@@ -481,4 +705,30 @@ fn main() -> Result<()> {
         Cmd::Launch { .. } => unreachable!(),
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn command_line_passes_script_and_arguments_through_sh() {
+        let script = "printf '%s|' \"$@\"";
+        let args = ["plain", "it's", "$HOME `id`; x", "", "new\nline"];
+        // AWS-RunShellScript runs the command with sh
+        let out = Command::new("sh")
+            .args(["-c", &command_line(script, &args)])
+            .output()
+            .unwrap();
+        assert_eq!(
+            String::from_utf8_lossy(&out.stdout),
+            format!("{}|", args.join("|"))
+        );
+    }
+
+    #[test]
+    fn hm_formats_hours_and_minutes() {
+        assert_eq!(hm(3 * 3600 + 5 * 60 + 9), "3h 05m");
+        assert_eq!(hm(-5), "0h 00m");
+    }
 }

@@ -1,0 +1,20 @@
+// Biome as the linter (`npm run lint`, in CI). No formatter.
+{
+  "$schema": "./node_modules/@biomejs/biome/configuration_schema.json",
+  "vcs": { "enabled": true, "clientKind": "git", "useIgnoreFile": true },
+  "files": { "includes": ["**", "!**/dist", "!**/.sst", "!**/sst-env.d.ts", "!**/*.css", "!cli/target"] },
+  "formatter": { "enabled": false },
+  "assist": { "enabled": false },
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "preset": "recommended",
+      "style": {
+        // With noUncheckedIndexedAccess, `x[i]!` after a check is the normal way to say "it's there".
+        "noNonNullAssertion": "off",
+        "useTemplate": "off"
+      },
+      "complexity": { "useLiteralKeys": "off" }
+    }
+  }
+}

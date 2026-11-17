@@ -1,0 +1,41 @@
+import { expect, test } from "@playwright/test";
+
+// Read-only: the page shows the real instance; nothing here starts, stops or spawns anything.
+
+test("shows the instance and, when it runs, its sessions and details", async ({ page }) => {
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  page.on("console", (m) => m.type() === "error" && errors.push(m.text()));
+
+  await page.goto("/");
+  const state = page.getByTestId("instance-state");
+  await expect(state).toHaveText(/running|stopped|pending|stopping/);
+  await expect(page.getByTestId("instance-type")).toHaveText(/^[a-z0-9]+\.[a-z0-9]+$/);
+
+  if ((await state.textContent())?.trim() === "running") {
+    await expect(page.getByTestId("session").first()).toBeVisible();
+    await expect(page.getByTestId("session").filter({ hasText: "main" })).toBeVisible();
+    await expect(page.getByTestId("main-session")).toHaveText(/running|missing/);
+    await expect(page.getByTestId("autostop")).toContainText("Stops in");
+
+    // The new-session form loads the conversations and folders; it is not submitted.
+    await page.getByTestId("new-session").click();
+    await expect(page.getByTestId("folder").locator("option").first()).toHaveText("~");
+    await expect(page.getByTestId("fork").locator("option")).not.toHaveCount(0);
+  }
+
+  // No horizontal scrolling, also at phone width.
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+  expect(overflow).toBeLessThanOrEqual(0);
+  expect(errors).toEqual([]);
+});
+
+test("a read-only user gets a clear message for actions", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.getByTestId("instance-state")).toBeVisible();
+  // The command card only appears when the instance runs; running a command is refused for the test group.
+  test.skip((await page.getByTestId("instance-state").textContent())?.trim() !== "running", "instance not running");
+  await page.getByTestId("command").fill("true");
+  await page.getByRole("button", { name: "Run" }).click();
+  await expect(page.getByTestId("command-card").getByRole("alert")).toHaveText("Read-only access");
+});

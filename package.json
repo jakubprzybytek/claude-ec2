@@ -1,0 +1,32 @@
+{
+  "name": "claude-ec2",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "sst dev",
+    "deploy": "sst deploy",
+    "shell": "sst shell",
+    "typecheck": "tsc -p packages/api && npm run typecheck -w @claude-ec2/web",
+    "lint": "biome lint .",
+    "test": "vitest run --project unit",
+    "test:integration": "vitest run --project integration",
+    "test:e2e": "playwright test -c packages/web/playwright.config.ts"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.5.15",
+    "@playwright/test": "^1.65.1",
+    "@types/aws-lambda": "^8.10.164",
+    "@types/node": "^24.19.2",
+    "aws-sdk-client-mock": "^4.1.0",
+    "sst": "^4.17.2",
+    "typescript": "^7.0.2",
+    "vitest": "^5.1.0"
+  }
+}

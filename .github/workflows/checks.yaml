@@ -1,0 +1,53 @@
+# The checks that need no AWS access: the web app (typecheck, unit tests, build) and the CLI (format, lint, tests).
+# Used by Continuous Delivery and Pull Request Checks.
+
+name: Checks
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  app:
+    name: App
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Registry signatures
+        run: npm audit signatures
+      - run: npx sst install
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build -w @claude-ec2/web
+
+  cli:
+    name: CLI
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: cli
+    steps:
+      - uses: actions/checkout@v6
+      - run: rustup component add rustfmt clippy
+      - uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            cli/target
+          key: cargo-${{ hashFiles('cli/Cargo.lock') }}
+      - run: cargo fmt --check
+      - run: cargo clippy --all-targets --locked -- -D warnings
+      - run: cargo test --locked
+      # The CLI is built for Windows on the owner's machine; this checks that it still compiles there too.
+      - run: rustup target add x86_64-pc-windows-gnu && sudo apt-get install -y -qq gcc-mingw-w64-x86-64 > /dev/null
+      - run: cargo build --locked --release --target x86_64-pc-windows-gnu
