@@ -9,6 +9,7 @@ import snoozeSh from "../../../remote/snooze.sh";
 import spawnSh from "../../../remote/spawn.sh";
 import statusSh from "../../../remote/status.sh";
 import { type Access, accessOf } from "./access.ts";
+import { cachedMonthCosts, NO_ACCESS } from "./costs.ts";
 import { findInstance, HttpError, INSTANCE_TYPES, requireReachable, resize, ssmOnline, start, stop } from "./instance.ts";
 import { type RemoteResult, result, run, send } from "./remote.ts";
 
@@ -121,6 +122,12 @@ export const routes: Record<string, Route> = {
       if (!Number.isInteger(days) || days < 1 || days > 90) throw new HttpError(400, "days must be 1-90");
       return json(await run((await requireReachable()).id, conversationsSh, [String(days)]));
     },
+  },
+  // The account's costs this month (Cost Explorer, kept in memory for hours: each request to it costs $0.01).
+  // Without Cost Explorer access (yet) the answer says why, as a 200: the page shows it as a note, not as an error.
+  "GET /costs": {
+    access: "read",
+    run: () => cachedMonthCosts().catch((e: unknown) => (e instanceof HttpError && e.message === NO_ACCESS ? { unavailable: NO_ACCESS } : Promise.reject(e))),
   },
 };
 

@@ -1,40 +1,65 @@
 import { useCallback, useEffect, useState } from "react";
-import { APP_VERSION, api, type Details, type Session, type Status } from "./api.ts";
+import { APP_VERSION, api, type CostsAnswer, type Details, type Instance, type Session, type Status } from "./api.ts";
 import { currentSession, logout, type Session as UserSession } from "./auth.ts";
 import { CommandCard } from "./CommandCard.tsx";
+import { CostsCard } from "./CostsCard.tsx";
 import { DetailsCard } from "./DetailsCard.tsx";
 import { InstanceCard } from "./InstanceCard.tsx";
 import { LoginForm } from "./LoginForm.tsx";
 import { SessionsCard } from "./SessionsCard.tsx";
-import { usePoll } from "./usePoll.ts";
+import { Spinner } from "./ui.tsx";
+import { clearCache, usePoll } from "./usePoll.ts";
 
 export function App() {
   const [user, setUser] = useState<UserSession | null | undefined>(undefined);
   const check = useCallback(() => currentSession().then(setUser), []);
   useEffect(() => void check(), [check]);
 
-  if (user === undefined) return null;
+  if (user === undefined)
+    return (
+      <div className="splash">
+        <Spinner label="Signing in" />
+      </div>
+    );
   if (user === null) return <LoginForm onSignedIn={check} />;
-  return <Dashboard email={user.email} onLogout={() => logout().then(() => setUser(null))} />;
+  return (
+    <Dashboard
+      email={user.email}
+      onLogout={() => {
+        clearCache();
+        void logout().then(() => setUser(null));
+      }}
+    />
+  );
 }
 
 function Dashboard({ email, onLogout }: { email: string; onLogout: () => void }) {
-  // EC2 state: often while it changes, else every 30 s.
+  // EC2 state: often while it changes, else every 30 s. Shown at once from the last visit's answer, then refreshed.
   const [fast, setFast] = useState(false);
-  const status = usePoll(() => api<Status>("GET", "/status"), fast ? 5_000 : 30_000);
+  const status = usePoll(() => api<Status>("GET", "/status"), fast ? 4_000 : 30_000, true, "status");
   const state = status.data?.instance.state;
   const reachable = state === "running" && status.data?.ssmOnline === true;
   useEffect(() => setFast(state === "pending" || state === "stopping" || (state === "running" && !reachable)), [state, reachable]);
 
-  // From the instance itself (SSM, a few seconds each): only while it is reachable.
-  const details = usePoll(() => api<Details>("GET", "/status/details"), 60_000, reachable);
-  const sessions = usePoll(() => api<{ sessions: Session[] }>("GET", "/sessions").then((r) => r.sessions), 15_000, reachable);
+  // From the instance itself (SSM, a second or two each): only while it is reachable. When the last visit found it
+  // reachable, these start together with the status instead of after it.
+  const details = usePoll(() => api<Details>("GET", "/status/details"), 60_000, reachable, "details");
+  const sessions = usePoll(() => api<{ sessions: Session[] }>("GET", "/sessions").then((r) => r.sessions), 15_000, reachable, "sessions");
+
+  // An action's answer (pending, stopping, the new type) shows at once; the next load confirms it.
+  function onInstanceChange(instance: Instance) {
+    if (status.data) status.set({ ...status.data, instance, ssmOnline: false });
+    void status.reload();
+  }
+
+  // Cost Explorer data changes a few times a day: once per visit, and on request.
+  const costs = usePoll(() => api<CostsAnswer>("GET", "/costs"), undefined, true, "costs");
 
   return (
     <div className="page">
       <header className="top">
         <h1>Claude EC2</h1>
-        <span className="muted small" data-testid="user-email">
+        <span className="muted small email" data-testid="user-email">
           {email}
         </span>
         <button type="button" className="link" onClick={onLogout}>
@@ -42,15 +67,16 @@ function Dashboard({ email, onLogout }: { email: string; onLogout: () => void })
         </button>
       </header>
       <main>
-        <InstanceCard status={status.data} error={status.error} onChange={() => void status.reload()} />
+        <InstanceCard status={status} onChange={onInstanceChange} />
         {reachable && (
           <>
-            <SessionsCard sessions={sessions.data} error={sessions.error} onChange={() => void sessions.reload()} />
-            <DetailsCard details={details.data} error={details.error} onChange={() => void details.reload()} />
+            <SessionsCard sessions={sessions} />
+            <DetailsCard details={details} />
             <CommandCard />
           </>
         )}
-        {state === "stopped" && <p className="muted center">Start the instance to see its Claude Code sessions.</p>}
+        {state === "stopped" && !status.stale && <p className="muted center">Start the instance to see its Claude Code sessions.</p>}
+        <CostsCard costs={costs} />
       </main>
       <footer className="muted small">
         {APP_VERSION} · <a href="https://github.com/jakubprzybytek/claude-ec2">source</a>

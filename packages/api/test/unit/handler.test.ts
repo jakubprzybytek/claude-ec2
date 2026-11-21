@@ -9,8 +9,10 @@ import {
 } from "@aws-sdk/client-ec2";
 import { type CommandInvocationStatus, DescribeInstanceInformationCommand, GetCommandInvocationCommand, SendCommandCommand, SSMClient } from "@aws-sdk/client-ssm";
 import type { APIGatewayProxyEventV2WithJWTAuthorizer, APIGatewayProxyStructuredResultV2 } from "aws-lambda";
+import { CostExplorerClient, GetCostAndUsageCommand, GetCostForecastCommand } from "@aws-sdk/client-cost-explorer";
 import { mockClient } from "aws-sdk-client-mock";
 import { beforeEach, describe, expect, it } from "vitest";
+import { clearCostsCache, NO_ACCESS } from "../../src/costs.ts";
 import { handler } from "../../src/handler.ts";
 import { timing } from "../../src/remote.ts";
 
@@ -90,6 +92,23 @@ describe("access", () => {
       expect(ssm.commandCalls(SendCommandCommand)).toHaveLength(0);
     },
   );
+
+  it("refuses the costs to users without the app's group", async () => {
+    expect((await call("GET /costs", { groups: "[portfolio-tracker]" })).status).toBe(403);
+  });
+
+  it("says why there are no costs while Cost Explorer is denied", async () => {
+    const ce = mockClient(CostExplorerClient);
+    ce.on(GetCostAndUsageCommand).rejects(Object.assign(new Error("denied"), { name: "AccessDeniedException" }));
+    ce.on(GetCostForecastCommand).rejects(Object.assign(new Error("denied"), { name: "AccessDeniedException" }));
+    clearCostsCache();
+    try {
+      expect(await call("GET /costs", { groups: READ })).toEqual({ status: 200, body: { unavailable: NO_ACCESS } });
+    } finally {
+      ce.restore();
+      clearCostsCache();
+    }
+  });
 
   it("answers 404 for unknown routes", async () => expect((await call("GET /nope")).status).toBe(404));
 });

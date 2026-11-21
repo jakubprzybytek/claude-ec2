@@ -106,3 +106,16 @@ export interface CommandResult {
   stdout: string;
   stderr: string;
 }
+
+/** GET /costs (packages/api/src/costs.ts): the AWS account's costs this month, or why they are not available. */
+export type CostsAnswer = Costs | { unavailable: string };
+
+export interface Costs {
+  month: string;
+  currency: string;
+  total: number;
+  forecast: number | null;
+  services: { name: string; amount: number }[];
+  days: { date: string; amount: number; estimated: boolean }[];
+  updatedAt: number;
+}

@@ -1,43 +1,44 @@
 import { useState } from "react";
 import { api, type Instance, type Status } from "./api.ts";
 import { time } from "./format.ts";
+import { BusyButton, CardHeader, Skeleton } from "./ui.tsx";
+import type { Polled } from "./usePoll.ts";
 
 const BADGE: Record<string, string> = { running: "ok", pending: "busy", stopping: "busy", stopped: "off" };
 
 /** EC2 state and the actions on the instance itself: start, stop, resize. */
-export function InstanceCard({ status, error, onChange }: { status: Status | undefined; error: string | undefined; onChange: () => void }) {
-  const [busy, setBusy] = useState(false);
+export function InstanceCard({ status, onChange }: { status: Polled<Status>; onChange: (instance: Instance) => void }) {
+  const [busy, setBusy] = useState<string>();
   const [actionError, setActionError] = useState<string>();
   const [type, setType] = useState("");
-  const i = status?.instance;
+  const { data, error } = status;
+  const i = data?.instance;
 
-  async function act(path: string, body?: unknown, confirmText?: string) {
+  async function act(action: string, body?: unknown, confirmText?: string) {
     if (confirmText && !window.confirm(confirmText)) return;
-    setBusy(true);
+    setBusy(action);
     setActionError(undefined);
     try {
-      await api<{ instance: Instance }>("POST", path, body);
-      onChange();
+      onChange((await api<{ instance: Instance }>("POST", `/instance/${action}`, body)).instance);
     } catch (e) {
       setActionError((e as Error).message);
     } finally {
-      setBusy(false);
+      setBusy(undefined);
     }
   }
 
   return (
-    <section className="card" data-testid="instance-card">
-      <header>
-        <h2>Instance</h2>
+    <section className={`card${status.stale ? " stale" : ""}`} data-testid="instance-card" aria-busy={status.loading}>
+      <CardHeader title="Instance" polled={status}>
         {i && (
           <span className={`badge ${BADGE[i.state] ?? "off"}`} data-testid="instance-state">
             {i.state}
-            {i.state === "running" && !status.ssmOnline ? " · connecting" : ""}
+            {i.state === "running" && !data.ssmOnline ? " · connecting" : ""}
           </span>
         )}
-      </header>
+      </CardHeader>
       {error && <p className="error" role="alert">{error}</p>}
-      {!i && !error && <p className="muted">Loading…</p>}
+      {!i && !error && <Skeleton lines={3} label="Loading the instance" />}
       {i && (
         <>
           <dl className="facts">
@@ -56,31 +57,32 @@ export function InstanceCard({ status, error, onChange }: { status: Status | und
           </dl>
           <div className="actions">
             {(i.state === "stopped" || i.state === "pending") && (
-              <button type="button" className="primary" disabled={busy || i.state === "pending"} onClick={() => act("/instance/start")} data-testid="start">
-                {i.state === "pending" ? "Starting…" : "Start"}
-              </button>
+              <BusyButton className="primary" busy={busy === "start" || i.state === "pending"} busyText="Starting…" disabled={!!busy || status.stale} onClick={() => act("start")} data-testid="start">
+                Start
+              </BusyButton>
             )}
             {(i.state === "running" || i.state === "stopping") && (
-              <button
-                type="button"
+              <BusyButton
                 className="danger"
-                disabled={busy || i.state === "stopping"}
-                onClick={() => act("/instance/stop", undefined, "Stop the instance? Every Claude Code session on it ends (conversations are kept).")}
+                busy={busy === "stop" || i.state === "stopping"}
+                busyText="Stopping…"
+                disabled={!!busy || status.stale}
+                onClick={() => act("stop", undefined, "Stop the instance? Every Claude Code session on it ends (conversations are kept).")}
                 data-testid="stop"
               >
-                {i.state === "stopping" ? "Stopping…" : "Stop"}
-              </button>
+                Stop
+              </BusyButton>
             )}
             {i.state === "stopped" && (
               <span className="inline">
                 <select value={type || i.type} onChange={(e) => setType(e.target.value)} aria-label="Instance type">
-                  {status.instanceTypes.map((t) => (
+                  {data.instanceTypes.map((t) => (
                     <option key={t}>{t}</option>
                   ))}
                 </select>
-                <button type="button" disabled={busy || !type || type === i.type} onClick={() => act("/instance/resize", { type })}>
+                <BusyButton busy={busy === "resize"} busyText="Resizing…" disabled={!!busy || status.stale || !type || type === i.type} onClick={() => act("resize", { type })}>
                   Resize
-                </button>
+                </BusyButton>
               </span>
             )}
           </div>

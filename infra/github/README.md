@@ -34,6 +34,7 @@ The most any of the app's roles may do: logs, and
 - `InstanceRead`: describe instances, SSM instance information and command results.
 - `InstanceControl`: start, stop and change the type of instances tagged `Name=claude-code` only.
 - `InstanceCommands`, `ShellScriptDocument`: SSM Run Command with `AWS-RunShellScript`, on instances tagged `Name=claude-code` only.
+- `Costs`: read the account's costs from Cost Explorer (the web app's costs card); its actions take no resource scope.
 - `EncryptedVolumes`: KMS use through EC2 only (`kms:ViaService`), to start an instance with an encrypted volume.
 - `SstDev`: AppSync Events for `sst dev`.
 

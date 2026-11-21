@@ -58,6 +58,8 @@ const handler = new sst.aws.Function("ApiHandler", {
     { actions: ["ec2:StartInstances", "ec2:StopInstances", "ec2:ModifyInstanceAttribute"], resources: [instanceArn], conditions: tagged("aws:ResourceTag/Name") },
     { actions: ["ssm:SendCommand"], resources: [instanceArn], conditions: tagged("ssm:resourceTag/Name") },
     { actions: ["ssm:SendCommand"], resources: [$interpolate`arn:aws:ssm:${region}::document/AWS-RunShellScript`] },
+    // The account's costs (GET /costs). Cost Explorer actions take no resource scope.
+    { actions: ["ce:GetCostAndUsage", "ce:GetCostForecast"], resources: ["*"] },
     // Starting an instance with an encrypted volume: EC2 uses the volume's KMS key on the caller's behalf.
     {
       actions: ["kms:CreateGrant", "kms:Decrypt", "kms:DescribeKey", "kms:GenerateDataKeyWithoutPlaintext", "kms:ReEncryptFrom", "kms:ReEncryptTo"],
@@ -81,6 +83,7 @@ for (const route of [
   "POST /sessions",
   "DELETE /sessions/{name}",
   "GET /conversations",
+  "GET /costs",
 ]) {
   api.route(route, handler.arn, auth);
 }

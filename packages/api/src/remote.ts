@@ -56,15 +56,18 @@ export async function result(instanceId: string, commandId: string): Promise<Rem
   }
 }
 
-/** How long `run` waits (API Gateway gives up after 30 s) and how often it asks; the tests shorten them. */
-export const timing = { waitMs: 20_000, pollMs: 1_000 };
+/**
+ * How long `run` waits (API Gateway gives up after 30 s) and how often it asks: soon at first (the scripts take about a
+ * second, and every wait adds to what the page shows as loading), then every pollMs. The tests shorten them.
+ */
+export const timing = { waitMs: 20_000, pollMs: 1_000, firstPollsMs: [300, 300, 400, 500, 500] };
 
 /** Sends the script and waits for it, at most `timing.waitMs`; then returns it unfinished. */
 export async function run(instanceId: string, script: string, args: string[] = []): Promise<RemoteResult> {
   const commandId = await send(instanceId, script, args);
   const deadline = Date.now() + timing.waitMs;
-  for (;;) {
-    await sleep(timing.pollMs);
+  for (let i = 0; ; i++) {
+    await sleep(Math.min(timing.firstPollsMs[i] ?? timing.pollMs, timing.pollMs));
     const r = await result(instanceId, commandId);
     if (r.done || Date.now() > deadline) return r;
   }

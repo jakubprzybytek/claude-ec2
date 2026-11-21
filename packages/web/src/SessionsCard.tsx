@@ -1,10 +1,13 @@
 import { type FormEvent, useState } from "react";
 import { api, type Conversation, type Session } from "./api.ts";
 import { ago, shortPath, slug, time } from "./format.ts";
-import { usePoll } from "./usePoll.ts";
+import { BusyButton, CardHeader, Skeleton, Spinner } from "./ui.tsx";
+import { type Polled, usePoll } from "./usePoll.ts";
 
 /** Claude Code sessions on the instance: open them in claude.ai, close spawned ones, start new ones. */
-export function SessionsCard({ sessions, error, onChange }: { sessions: Session[] | undefined; error: string | undefined; onChange: () => void }) {
+export function SessionsCard({ sessions: polled }: { sessions: Polled<Session[]> }) {
+  const { data: sessions, error } = polled;
+  const onChange = () => void polled.reload();
   const [closing, setClosing] = useState<string>();
   const [closeError, setCloseError] = useState<string>();
   const [showNew, setShowNew] = useState(false);
@@ -24,13 +27,12 @@ export function SessionsCard({ sessions, error, onChange }: { sessions: Session[
   }
 
   return (
-    <section className="card" data-testid="sessions-card">
-      <header>
-        <h2>Claude Code sessions</h2>
+    <section className={`card${polled.stale ? " stale" : ""}`} data-testid="sessions-card" aria-busy={polled.loading}>
+      <CardHeader title="Claude Code sessions" polled={polled}>
         <button type="button" className="primary" onClick={() => setShowNew((v) => !v)} data-testid="new-session">
           {showNew ? "Cancel" : "New session"}
         </button>
-      </header>
+      </CardHeader>
       {showNew && (
         <NewSession
           taken={(sessions ?? []).map((s) => s.name)}
@@ -41,7 +43,7 @@ export function SessionsCard({ sessions, error, onChange }: { sessions: Session[
         />
       )}
       {error && <p className="error" role="alert">{error}</p>}
-      {!sessions && !error && <p className="muted">Asking the instance…</p>}
+      {!sessions && !error && <Skeleton lines={3} label="Asking the instance" />}
       {sessions && sessions.length === 0 && <p className="muted">No Claude Code sessions.</p>}
       <ul className="sessions">
         {(sessions ?? []).map((s) => (
@@ -60,12 +62,20 @@ export function SessionsCard({ sessions, error, onChange }: { sessions: Session[
                   Open in claude.ai
                 </a>
               ) : (
-                <span className="muted small">{s.main ? "Remote Control not on (/remote-control in the session)" : "Connecting to claude.ai…"}</span>
+                <span className="muted small">
+                  {s.main ? (
+                    "Remote Control not on (/remote-control in the session)"
+                  ) : (
+                    <>
+                      <Spinner /> Connecting to claude.ai…
+                    </>
+                  )}
+                </span>
               )}
               {!s.main && (
-                <button type="button" className="danger" disabled={closing === s.name} onClick={() => close(s.name)}>
-                  {closing === s.name ? "Closing…" : "Close"}
-                </button>
+                <BusyButton className="danger" busy={closing === s.name} busyText="Closing…" disabled={closing !== undefined || polled.stale} onClick={() => close(s.name)}>
+                  Close
+                </BusyButton>
               )}
             </div>
           </li>
@@ -107,9 +117,12 @@ function NewSession({ taken, onStarted }: { taken: string[]; onStarted: () => vo
   return (
     <form className="new-session" onSubmit={submit} data-testid="new-session-form">
       <label className="field">
-        <span>Start from</span>
+        <span>
+          Start from {lists.loading && <Spinner label="Loading recent conversations" />}
+        </span>
         <select
           value={fork}
+          disabled={lists.loading && !lists.data}
           onChange={(e) => {
             setFork(e.target.value);
             const c = lists.data?.conversations.find((x) => x.id === e.target.value);
@@ -117,7 +130,7 @@ function NewSession({ taken, onStarted }: { taken: string[]; onStarted: () => vo
           }}
           data-testid="fork"
         >
-          <option value="">A new conversation</option>
+          <option value="">{lists.loading && !lists.data ? "A new conversation (loading recent ones…)" : "A new conversation"}</option>
           {(lists.data?.conversations ?? []).map((c) => (
             <option key={c.id} value={c.id}>
               Fork: {c.title ?? c.firstPrompt?.slice(0, 60) ?? c.id} · {shortPath(c.folder)} · {ago(c.modified)}
@@ -162,9 +175,9 @@ function NewSession({ taken, onStarted }: { taken: string[]; onStarted: () => vo
           {error}
         </p>
       )}
-      <button type="submit" className="primary" disabled={busy} data-testid="spawn">
-        {busy ? "Starting…" : "Start session"}
-      </button>
+      <BusyButton type="submit" className="primary" busy={busy} busyText="Starting…" data-testid="spawn">
+        Start session
+      </BusyButton>
     </form>
   );
 }

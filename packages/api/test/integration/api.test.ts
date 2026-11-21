@@ -58,6 +58,18 @@ describe("API", () => {
     expect(r.body["error"]).toBe("Read-only access");
   });
 
+  it("shows this month's costs, or why it can't", async (ctx) => {
+    const r = await call("GET", "/costs");
+    expect(r.status).toBe(200);
+    // Until the boundary allows Cost Explorer (infra/github/README.md) the answer says why; the page shows it as a note.
+    if (r.body["unavailable"]) {
+      expect(r.body["unavailable"]).toContain("Cost Explorer");
+      ctx.skip();
+    }
+    expect(r.body).toMatchObject({ month: new Date().toISOString().slice(0, 7), total: expect.any(Number), currency: expect.any(String) });
+    expect(Array.isArray(r.body["services"])).toBe(true);
+  });
+
   describe("on the instance (when it is running)", () => {
     let running = false;
     beforeAll(async () => {

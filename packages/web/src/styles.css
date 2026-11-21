@@ -329,3 +329,232 @@ footer {
   justify-self: start;
   margin-top: 8px;
 }
+
+/* Loading (ui.tsx) */
+.splash {
+  min-height: 60vh;
+  display: grid;
+  place-items: center;
+}
+
+.splash .spinner {
+  width: 28px;
+  height: 28px;
+  border-width: 3px;
+}
+
+.spinner {
+  display: inline-block;
+  width: 1em;
+  height: 1em;
+  flex: none;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  vertical-align: -0.15em;
+  opacity: 0.75;
+  animation: spin 0.8s linear infinite;
+}
+
+button .spinner {
+  margin-right: 6px;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.header-tools {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.refresh {
+  display: inline-grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  min-height: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--muted);
+  font-size: 1.1rem;
+}
+
+button.refresh:hover {
+  color: var(--accent);
+}
+
+.skeleton {
+  display: grid;
+  gap: 10px;
+  padding: 6px 0;
+}
+
+.skeleton span {
+  display: block;
+  height: 0.9em;
+  border-radius: 6px;
+  background: linear-gradient(90deg, var(--code) 0%, var(--border) 50%, var(--code) 100%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s ease-in-out infinite;
+}
+
+@keyframes shimmer {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: -100% 0;
+  }
+}
+
+/* Shown from the last visit until refreshed. */
+.card.stale > :not(header) {
+  opacity: 0.6;
+  transition: opacity 0.2s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spinner,
+  .skeleton span {
+    animation-duration: 3s;
+  }
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.top .email {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* Costs (CostsCard.tsx) */
+.figures {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 32px;
+  margin-bottom: 12px;
+}
+
+.figure {
+  font-size: 1.6rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+}
+
+.muted-figure {
+  color: var(--muted);
+}
+
+.daily {
+  margin: 0 0 12px;
+}
+
+.daily figcaption {
+  min-height: 1.4em;
+  margin-bottom: 4px;
+}
+
+.bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 96px;
+  border-bottom: 1px solid var(--border);
+}
+
+.bars .bar {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: none;
+  display: flex;
+  align-items: flex-end;
+  outline: none;
+}
+
+.bar span {
+  display: block;
+  width: 100%;
+  max-width: 18px;
+  margin: 0 auto;
+  border-radius: 4px 4px 0 0;
+  background: var(--accent);
+  opacity: 0.85;
+}
+
+.bar.estimated span {
+  opacity: 0.4;
+}
+
+.bar.on span,
+.bar:focus-visible span {
+  opacity: 1;
+  outline: 2px solid var(--text);
+  outline-offset: 1px;
+}
+
+.axis {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 2px;
+}
+
+.services {
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+
+.services td {
+  padding: 5px 0;
+  border-top: 1px solid var(--border);
+  vertical-align: top;
+}
+
+.services tr:first-child td {
+  border-top: none;
+}
+
+.service-name {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.share {
+  display: block;
+  height: 4px;
+  margin-top: 3px;
+  border-radius: 2px;
+  background: var(--code);
+}
+
+.share span {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--muted);
+}
+
+.services .amount {
+  text-align: right;
+  white-space: nowrap;
+  padding-left: 14px;
+}
