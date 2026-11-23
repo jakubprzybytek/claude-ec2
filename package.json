@@ -20,7 +20,7 @@
     "test:e2e": "playwright test -c packages/web/playwright.config.ts"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.6.6",
+    "@biomejs/biome": "^2.6.8",
     "@playwright/test": "^1.65.1",
     "@types/aws-lambda": "^8.10.164",
     "@types/node": "^24.19.2",
