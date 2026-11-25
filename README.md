@@ -15,7 +15,7 @@ Control the Claude Code EC2 instance (eu-west-1, launch template `claude-code-ub
 - **Auto-stop and load:** when the instance will stop by itself and why (idle limit or uptime cap), snooze for 1-8 h, load, memory, disk.
 - **Claude Code sessions:** the main session and the spawned ones, each with its claude.ai link. **New session** starts `claude --remote-control <name>` in a tmux session on the instance, in a folder you pick, either as a new conversation or as a fork of a recent one, optionally with a first prompt. It shows up in claude.ai/code and the Claude app in a few seconds. **Close** ends it; the conversation is kept and can be forked later.
 - **Run a command** as `ubuntu`, like `claude-ec2 exec`.
-- **AWS costs this month:** the whole account's month-to-date costs, Cost Explorer's month-end forecast, the Claude Code instance's share (running time, disk, public IPv4: told apart by usage type, as it is the account's only instance), this app's own costs (its resources tagged `sst:app=claude-ec2`, every stage, by service), a bar per day with the instance's part and the costs by service. Cost Explorer charges $0.01 a request (three per refresh), so the page keeps the answer in the browser (localStorage) for 6 hours and asks again only after that, in a new month, or on the card's refresh button; the function also keeps it in memory while it stays warm.
+- **The instance's costs this month:** the Claude Code instance's month-to-date costs (running time, disk, public IPv4: told apart by service and usage type, as it is the account's only instance), a bar per day. Cost Explorer charges $0.01 a request (one per refresh), so the page keeps the answer in the browser (localStorage) for 6 hours and asks again only after that, in a new month, or on the card's refresh button.
 
 The page shows the last known state at once (kept in the browser) and refreshes it; a spinner in each card's header shows a load in progress, and ↻ refreshes the card.
 
@@ -28,7 +28,7 @@ browser ── CloudFront (claude-ec2.albedoonline.com) ──┬── S3: the 
                                                       └── /api → API Gateway (Cognito JWT) → Lambda (packages/api)
                                                                      │ EC2 API: describe, start, stop, resize
                                                                      ├ SSM Run Command: remote/*.sh on the instance
-                                                                     └ Cost Explorer: the month's costs
+                                                                     └ Cost Explorer: the instance's costs
 ```
 
 - The stack is an SST app (`sst.config.ts`, `infra/`). It also holds the instance's launch template (`infra/ec2.ts`, imported from the hand-made one); the instance, its role and security group are still managed by hand (docs/development.md, "Deviations").

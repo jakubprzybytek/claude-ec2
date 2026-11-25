@@ -123,7 +123,7 @@ export const routes: Record<string, Route> = {
       return json(await run((await requireReachable()).id, conversationsSh, [String(days)]));
     },
   },
-  // The account's costs this month (Cost Explorer, kept in memory for hours: each request to it costs $0.01).
+  // The Claude Code instance's costs this month (Cost Explorer: each request to it costs $0.01, so the answer is kept).
   // Without Cost Explorer access (yet) the answer says why, as a 200: the page shows it as a note, not as an error.
   "GET /costs": {
     access: "read",

@@ -58,7 +58,7 @@ describe("API", () => {
     expect(r.body["error"]).toBe("Read-only access");
   });
 
-  it("shows this month's costs, or why it can't", async (ctx) => {
+  it("shows the instance's costs this month, or why it can't", async (ctx) => {
     const r = await call("GET", "/costs");
     expect(r.status).toBe(200);
     // Until the boundary allows Cost Explorer (infra/github/README.md) the answer says why; the page shows it as a note.
@@ -67,14 +67,11 @@ describe("API", () => {
       ctx.skip();
     }
     expect(r.body).toMatchObject({ month: new Date().toISOString().slice(0, 7), total: expect.any(Number), currency: expect.any(String) });
-    expect(Array.isArray(r.body["services"])).toBe(true);
-    // The Claude Code instance runs all month: running time and disk show up every month.
-    const instance = r.body["instance"] as { amount: number; parts: { name: string }[] };
-    expect(instance.amount).toBeGreaterThan(0);
-    expect(instance.parts.map((p) => p.name)).toEqual(expect.arrayContaining(["Running time", "Disk"]));
-    expect(r.body["days"]).toContainEqual(expect.objectContaining({ instance: expect.any(Number) }));
-    // The app's tagged resources: a figure (possibly 0 while tag data catches up), by service.
-    expect(r.body["app"]).toMatchObject({ name: "claude-ec2", amount: expect.any(Number), services: expect.any(Array) });
+    // The Claude Code instance's costs only: it exists all month, so its disk shows up every month.
+    expect(r.body["total"]).toBeGreaterThan(0);
+    expect((r.body["parts"] as { name: string }[]).map((p) => p.name)).toContain("Disk");
+    expect(r.body["days"]).toContainEqual(expect.objectContaining({ date: expect.any(String), amount: expect.any(Number) }));
+    expect(r.body).not.toHaveProperty("services");
   });
 
   describe("on the instance (when it is running)", () => {

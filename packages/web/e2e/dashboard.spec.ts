@@ -48,7 +48,7 @@ test("keeps the costs in the browser instead of asking again on the next visit",
   const asked: string[] = [];
   page.on("request", (r) => new URL(r.url()).pathname.endsWith("/costs") && asked.push(r.url()));
   await page.reload();
-  await expect(page.getByTestId("costs-app")).toBeVisible();
+  await expect(page.getByTestId("costs-parts")).toBeVisible();
   await expect(page.getByTestId("instance-state")).toBeVisible();
   expect(asked).toEqual([]);
 

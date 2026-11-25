@@ -4,18 +4,11 @@ import { time } from "./format.ts";
 import { CardHeader, Skeleton } from "./ui.tsx";
 import type { Polled } from "./usePoll.ts";
 
-/** The app's services named under its figure; the rest are summed up. */
-const APP_TOP = 3;
-
-/** Services shown by name; the rest are summed up as "Other". */
-const TOP = 6;
-
-/** The AWS account's costs this month (Cost Explorer): month to date, forecast, the Claude Code instance's share, by day and by service. */
+/** The Claude Code instance's costs this month (Cost Explorer): month to date, by part and by day. */
 export function CostsCard({ costs: polled }: { costs: Polled<CostsAnswer> }) {
   const { data, error } = polled;
   const c = data && "unavailable" in data ? undefined : data;
   const unavailable = data && "unavailable" in data ? data.unavailable : undefined;
-  const [all, setAll] = useState(false);
   const [hover, setHover] = useState<number>();
 
   const money = (n: number) => new Intl.NumberFormat(undefined, { style: "currency", currency: c?.currency ?? "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
@@ -24,7 +17,7 @@ export function CostsCard({ costs: polled }: { costs: Polled<CostsAnswer> }) {
 
   return (
     <section className={`card${polled.stale ? " stale" : ""}`} data-testid="costs-card" aria-busy={polled.loading}>
-      <CardHeader title={c ? `AWS costs · ${monthName}` : "AWS costs"} polled={polled} />
+      <CardHeader title={c ? `Claude Code instance · ${monthName}` : "Claude Code instance costs"} polled={polled} />
       {/* Secondary to the instance: a failure here is a note, not an alarm (e.g. no Cost Explorer access yet). */}
       {error && <p className="muted small" data-testid="costs-error">{error}</p>}
       {unavailable && !error && (
@@ -42,97 +35,40 @@ export function CostsCard({ costs: polled }: { costs: Polled<CostsAnswer> }) {
                 {money(c.total)}
               </div>
             </div>
-            {c.forecast !== null && (
-              <div>
-                <div className="muted small">Forecast for the month</div>
-                <div className="figure muted-figure" data-testid="costs-forecast">
-                  {money(c.forecast)}
-                </div>
-              </div>
-            )}
-            <div>
-              <div className="muted small">
-                <span className="swatch instance" aria-hidden="true" />
-                Claude Code instance
-              </div>
-              <div className="figure" data-testid="costs-instance">
-                {money(c.instance.amount)}
-              </div>
-              {c.instance.parts.length > 0 && (
-                <div className="muted small" data-testid="costs-instance-parts">
-                  {c.instance.parts.map((p) => `${p.name} ${money(p.amount)}`).join(" · ")}
-                </div>
-              )}
-            </div>
-            {c.app && (
-              <div>
-                <div className="muted small">{c.app.name} app (tagged resources)</div>
-                <div className="figure" data-testid="costs-app">
-                  {money(c.app.amount)}
-                </div>
-                <div className="muted small" data-testid="costs-app-services">
-                  {c.app.services.length === 0
-                    ? "No tagged costs yet"
-                    : [
-                        ...c.app.services.slice(0, APP_TOP).map((s) => `${shortService(s.name)} ${money(s.amount)}`),
-                        ...(c.app.services.length > APP_TOP
-                          ? [`other ${money(c.app.services.slice(APP_TOP).reduce((t, s) => t + s.amount, 0))}`]
-                          : []),
-                      ].join(" · ")}
-                </div>
-              </div>
-            )}
           </div>
 
           <DailyBars days={c.days} money={money} dayName={dayName} hover={hover} setHover={setHover} />
 
-          <table className="services" data-testid="costs-services">
-            <caption className="sr-only">Costs by service, month to date</caption>
+          <table className="services" data-testid="costs-parts">
+            <caption className="sr-only">The instance's costs by part, month to date</caption>
             <thead className="sr-only">
               <tr>
-                <th>Service</th>
+                <th>Part</th>
                 <th>Cost</th>
               </tr>
             </thead>
             <tbody>
-              {serviceRows(c.services, all).map((s) => (
-                <tr key={s.name}>
+              {c.parts.map((p) => (
+                <tr key={p.name}>
                   <td>
-                    <span className="service-name">{s.name}</span>
+                    <span className="service-name">{p.name}</span>
                     <span className="share" aria-hidden="true">
-                      <span style={{ width: `${c.total > 0 ? Math.max(1, (s.amount / c.total) * 100) : 0}%` }} />
+                      <span style={{ width: `${c.total > 0 ? Math.max(1, (p.amount / c.total) * 100) : 0}%` }} />
                     </span>
                   </td>
-                  <td className="amount">{money(s.amount)}</td>
+                  <td className="amount">{money(p.amount)}</td>
                 </tr>
               ))}
             </tbody>
           </table>
-          {c.services.length > TOP + 1 && (
-            <button type="button" className="link small" onClick={() => setAll((v) => !v)}>
-              {all ? "Show fewer" : `Show all ${c.services.length} services`}
-            </button>
-          )}
           <p className="muted small">
-            The whole AWS account, tax included; today's costs are partial. The app's figure counts its resources tagged{" "}
-            <code>sst:app</code> (every stage), only while they carried the tag: the Claude Code instance since 25 Nov 2026. Cost
-            Explorer, as of {time(c.updatedAt / 1000)}.
+            The instance's running time, disk and public IPv4 address, before tax; today's costs are partial. Cost Explorer, as of{" "}
+            {time(c.updatedAt / 1000)}.
           </p>
         </>
       )}
     </section>
   );
-}
-
-/** "Amazon Elastic Compute Cloud - Compute" → "Elastic Compute Cloud - Compute", "AWS Lambda" → "Lambda". */
-function shortService(name: string) {
-  return name.replace(/^(Amazon|AWS)\s+/, "");
-}
-
-function serviceRows(services: Costs["services"], all: boolean) {
-  if (all || services.length <= TOP + 1) return services;
-  const rest = services.slice(TOP);
-  return [...services.slice(0, TOP), { name: `Other (${rest.length} services)`, amount: rest.reduce((s, x) => s + x.amount, 0) }];
 }
 
 /** Daily costs as bars: one series, so no legend; hover, focus or tap a bar for its value. */
@@ -157,15 +93,11 @@ function DailyBars({
       <figcaption className="small">
         {shown ? (
           <>
-            <strong>{dayName(shown.date)}</strong>: {money(shown.amount)}, instance {money(shown.instance)}
+            <strong>{dayName(shown.date)}</strong>: {money(shown.amount)}
             {shown.estimated ? <span className="muted"> (estimate, so far)</span> : null}
           </>
         ) : (
-          <span className="muted">
-            By day · highest {money(max)} · <span className="swatch instance" aria-hidden="true" />
-            instance <span className="swatch rest" aria-hidden="true" />
-            the rest
-          </span>
+          <span className="muted">By day · highest {money(max)}</span>
         )}
       </figcaption>
       <div className="bars">
@@ -174,14 +106,12 @@ function DailyBars({
             type="button"
             key={d.date}
             className={`bar${d.estimated ? " estimated" : ""}${hover === i ? " on" : ""}`}
-            aria-label={`${dayName(d.date)}: ${money(d.amount)}, instance ${money(d.instance)}${d.estimated ? ", estimate" : ""}`}
+            aria-label={`${dayName(d.date)}: ${money(d.amount)}${d.estimated ? ", estimate" : ""}`}
             onMouseEnter={() => setHover(i)}
             onFocus={() => setHover(i)}
             onClick={() => setHover(i)}
           >
-            <span className="stack" style={{ height: `${Math.max(d.amount > 0 ? 2 : 0, (d.amount / max) * 100)}%` }}>
-              <span className="instance" style={{ height: `${d.amount > 0 ? Math.min(100, (d.instance / d.amount) * 100) : 0}%` }} />
-            </span>
+            <span className="stack" style={{ height: `${Math.max(d.amount > 0 ? 2 : 0, (d.amount / max) * 100)}%` }} />
           </button>
         ))}
       </div>

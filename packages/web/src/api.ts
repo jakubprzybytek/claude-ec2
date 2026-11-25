@@ -113,13 +113,10 @@ export type CostsAnswer = Costs | { unavailable: string };
 export interface Costs {
   month: string;
   currency: string;
+  /** The Claude Code instance's costs month to date. */
   total: number;
-  forecast: number | null;
-  services: { name: string; amount: number }[];
-  /** The Claude Code instance, month to date: running time, disk, public IPv4. */
-  instance: { amount: number; parts: { name: string; amount: number }[] };
-  /** This app's resources by the cost tag sst:app (every stage), by service; null when Cost Explorer could not say. */
-  app: { name: string; amount: number; services: { name: string; amount: number }[] } | null;
-  days: { date: string; amount: number; instance: number; estimated: boolean }[];
+  /** Running time, disk, public IPv4; largest first. */
+  parts: { name: string; amount: number }[];
+  days: { date: string; amount: number; estimated: boolean }[];
   updatedAt: number;
 }

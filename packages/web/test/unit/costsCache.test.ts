@@ -6,11 +6,8 @@ const NOW = Date.parse("2026-11-25T20:00:00Z");
 const costs: Costs = {
   month: "2026-11",
   currency: "USD",
-  total: 40,
-  forecast: 80,
-  services: [],
-  instance: { amount: 7.5, parts: [] },
-  app: { name: "claude-ec2", amount: 1, services: [] },
+  total: 7.5,
+  parts: [{ name: "Disk", amount: 2 }],
   days: [],
   updatedAt: NOW,
 };
@@ -27,8 +24,7 @@ describe("saved costs answer", () => {
 
   it("is not kept when it was a note or lacks fields the card reads", () => {
     expect(costsFresh({ data: { unavailable: "no access" }, at: NOW }, NOW)).toBe(false);
-    const { app: _app, ...old } = costs;
+    const { parts: _parts, ...old } = costs;
     expect(costsFresh({ data: old as Costs, at: NOW }, NOW)).toBe(false);
-    expect(costsFresh({ data: { ...costs, app: null }, at: NOW }, NOW)).toBe(true);
   });
 });

@@ -9,7 +9,7 @@ import {
 } from "@aws-sdk/client-ec2";
 import { type CommandInvocationStatus, DescribeInstanceInformationCommand, GetCommandInvocationCommand, SendCommandCommand, SSMClient } from "@aws-sdk/client-ssm";
 import type { APIGatewayProxyEventV2WithJWTAuthorizer, APIGatewayProxyStructuredResultV2 } from "aws-lambda";
-import { CostExplorerClient, GetCostAndUsageCommand, GetCostForecastCommand } from "@aws-sdk/client-cost-explorer";
+import { CostExplorerClient, GetCostAndUsageCommand } from "@aws-sdk/client-cost-explorer";
 import { mockClient } from "aws-sdk-client-mock";
 import { beforeEach, describe, expect, it } from "vitest";
 import { clearCostsCache, NO_ACCESS } from "../../src/costs.ts";
@@ -100,7 +100,6 @@ describe("access", () => {
   it("says why there are no costs while Cost Explorer is denied", async () => {
     const ce = mockClient(CostExplorerClient);
     ce.on(GetCostAndUsageCommand).rejects(Object.assign(new Error("denied"), { name: "AccessDeniedException" }));
-    ce.on(GetCostForecastCommand).rejects(Object.assign(new Error("denied"), { name: "AccessDeniedException" }));
     clearCostsCache();
     try {
       expect(await call("GET /costs", { groups: READ })).toEqual({ status: 200, body: { unavailable: NO_ACCESS } });
