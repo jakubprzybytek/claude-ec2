@@ -17,6 +17,9 @@ export const launchTemplate = isProd
       "ClaudeCodeTemplate",
       {
         name: "claude-code-ubuntu-arm",
+        // Each version a deploy creates becomes the default: the CLI's `launch` runs the template by name, which
+        // takes the default version.
+        updateDefaultVersion: true,
         // The description of the current version; a change here goes into the next version.
         description: "Cost tag sst:app on the instance, its volume and network interface",
         imageId: "resolve:ssm:/aws/service/canonical/ubuntu/server/24.04/stable/current/arm64/hvm/ebs-gp3/ami-id",
