@@ -459,6 +459,24 @@ button.refresh:hover {
   color: var(--muted);
 }
 
+.swatch {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  margin-right: 4px;
+  border-radius: 2px;
+  vertical-align: baseline;
+}
+
+.swatch.instance {
+  background: var(--accent);
+}
+
+.swatch.rest {
+  margin-left: 4px;
+  background: var(--off);
+}
+
 .daily {
   margin: 0 0 12px;
 }
@@ -490,22 +508,32 @@ button.refresh:hover {
   outline: none;
 }
 
-.bar span {
-  display: block;
+/* A day's bar: the whole account in grey, the Claude Code instance's share in the accent colour at its foot. */
+.bar .stack {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
   width: 100%;
   max-width: 18px;
   margin: 0 auto;
+  overflow: hidden;
   border-radius: 4px 4px 0 0;
-  background: var(--accent);
+  background: var(--off);
   opacity: 0.85;
 }
 
-.bar.estimated span {
+.bar .instance {
+  display: block;
+  width: 100%;
+  background: var(--accent);
+}
+
+.bar.estimated .stack {
   opacity: 0.4;
 }
 
-.bar.on span,
-.bar:focus-visible span {
+.bar.on .stack,
+.bar:focus-visible .stack {
   opacity: 1;
   outline: 2px solid var(--text);
   outline-offset: 1px;

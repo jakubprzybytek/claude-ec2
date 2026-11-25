@@ -1,17 +1,23 @@
 import { CostExplorerClient, GetCostAndUsageCommand, GetCostForecastCommand } from "@aws-sdk/client-cost-explorer";
 import { mockClient } from "aws-sdk-client-mock";
 import { beforeEach, describe, expect, it } from "vitest";
-import { CACHE_MS, cachedMonthCosts, clearCostsCache, monthCosts, NO_ACCESS } from "../../src/costs.ts";
+import { CACHE_MS, cachedMonthCosts, clearCostsCache, instancePart, monthCosts, NO_ACCESS } from "../../src/costs.ts";
 import { HttpError } from "../../src/instance.ts";
 
 const ce = mockClient(CostExplorerClient);
 const NOW = new Date("2026-11-03T10:00:00Z");
 
-const day = (date: string, services: Record<string, number>, estimated = false) => ({
+/** A day's cost lines, keyed "service" or "service|usage type". */
+const day = (date: string, lines: Record<string, number>, estimated = false) => ({
   TimePeriod: { Start: date, End: "" },
   Estimated: estimated,
-  Groups: Object.entries(services).map(([k, v]) => ({ Keys: [k], Metrics: { UnblendedCost: { Amount: String(v), Unit: "USD" } } })),
+  Groups: Object.entries(lines).map(([k, v]) => ({
+    Keys: k.includes("|") ? k.split("|") : [k, "Other"],
+    Metrics: { UnblendedCost: { Amount: String(v), Unit: "USD" } },
+  })),
 });
+
+const COMPUTE = "Amazon Elastic Compute Cloud - Compute";
 
 beforeEach(() => {
   ce.reset();
@@ -38,6 +44,45 @@ describe("month costs", () => {
     ]);
     expect(ce.commandCalls(GetCostAndUsageCommand)[0]!.args[0].input.TimePeriod).toEqual({ Start: "2026-11-01", End: "2026-11-04" });
     expect(ce.commandCalls(GetCostForecastCommand)[0]!.args[0].input.TimePeriod).toEqual({ Start: "2026-11-03", End: "2026-12-01" });
+  });
+
+  it("tells the instance's costs apart by usage type, per part and per day", async () => {
+    ce.on(GetCostAndUsageCommand).resolves({
+      ResultsByTime: [
+        day("2026-11-01", { [`${COMPUTE}|EU-BoxUsage:t4g.medium`]: 0.8, "EC2 - Other|EU-EBS:VolumeUsage.gp3": 0.08, "Amazon Virtual Private Cloud|EU-PublicIPv4:InUseAddress": 0.12, "Amazon DynamoDB|EU-TimedStorage-ByteHrs": 1 }),
+        day("2026-11-02", { [`${COMPUTE}|EU-CPUCredits:t4g`]: 0.001, "EC2 - Other|EU-EBS:VolumeUsage.gp3": 0.08, "EC2 - Other|EU-DataTransfer-Out-Bytes": 0.5 }),
+      ],
+    });
+    const c = await monthCosts(NOW);
+    expect(c.instance.amount).toBeCloseTo(1.081);
+    expect(c.instance.parts).toEqual([
+      { name: "Running time", amount: expect.closeTo(0.801) },
+      { name: "Disk", amount: expect.closeTo(0.16) },
+      { name: "Public IPv4", amount: 0.12 },
+    ]);
+    expect(c.days.map((d) => [d.amount, d.instance])).toEqual([
+      [2, expect.closeTo(1)],
+      [0.581, expect.closeTo(0.081)],
+    ]);
+    // The services are still summed over their usage types.
+    expect(c.services[0]).toEqual({ name: "Amazon DynamoDB", amount: 1 });
+    expect(ce.commandCalls(GetCostAndUsageCommand)[0]!.args[0].input.GroupBy?.map((g) => g.Key)).toEqual(["SERVICE", "USAGE_TYPE"]);
+  });
+
+  it("counts only the instance's usage types", () => {
+    expect(instancePart(COMPUTE, "BoxUsage:t4g.medium")).toBe("Running time");
+    expect(instancePart("EC2 - Other", "EU-EBS:SnapshotUsage")).toBe("Disk");
+    expect(instancePart("EC2 - Other", "EU-DataTransfer-Regional-Bytes")).toBeUndefined();
+    expect(instancePart("EC2 - Other", "EU-NatGateway-Hours")).toBeUndefined();
+    expect(instancePart("Amazon Relational Database Service", "EU-BoxUsage:db.t4g.micro")).toBeUndefined();
+  });
+
+  it("adds up a day that comes back in two pages once", async () => {
+    ce.on(GetCostAndUsageCommand)
+      .resolvesOnce({ ResultsByTime: [day("2026-11-01", { EC2: 1 })], NextPageToken: "p2" })
+      .resolves({ ResultsByTime: [day("2026-11-01", { S3: 2 })] });
+    const c = await monthCosts(NOW);
+    expect(c.days).toEqual([{ date: "2026-11-01", amount: 3, instance: 0, estimated: false }]);
   });
 
   it("shows the costs without a forecast when Cost Explorer has none", async () => {

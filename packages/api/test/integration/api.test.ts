@@ -68,6 +68,11 @@ describe("API", () => {
     }
     expect(r.body).toMatchObject({ month: new Date().toISOString().slice(0, 7), total: expect.any(Number), currency: expect.any(String) });
     expect(Array.isArray(r.body["services"])).toBe(true);
+    // The Claude Code instance runs all month: running time and disk show up every month.
+    const instance = r.body["instance"] as { amount: number; parts: { name: string }[] };
+    expect(instance.amount).toBeGreaterThan(0);
+    expect(instance.parts.map((p) => p.name)).toEqual(expect.arrayContaining(["Running time", "Disk"]));
+    expect(r.body["days"]).toContainEqual(expect.objectContaining({ instance: expect.any(Number) }));
   });
 
   describe("on the instance (when it is running)", () => {

@@ -1,5 +1,5 @@
 // The AWS account's costs for the current month, from Cost Explorer: month to date by service and by day, and the
-// month-end forecast. Cost Explorer charges $0.01 a request and refreshes its data a few times a day, so the answer is
+// month-end forecast, and the Claude Code instance's share. Cost Explorer charges $0.01 a request and refreshes its data a few times a day, so the answer is
 // kept in the function's memory for CACHE_MS: one page load costs two requests at most, usually none.
 
 import { CostExplorerClient, GetCostAndUsageCommand, GetCostForecastCommand } from "@aws-sdk/client-cost-explorer";
@@ -22,13 +22,33 @@ export interface Costs {
   forecast: number | null;
   /** Largest first; costs under a cent left out. */
   services: { name: string; amount: number }[];
-  /** Every day from the 1st to today. */
-  days: { date: string; amount: number; estimated: boolean }[];
+  /** The Claude Code instance: running time, disk and public IPv4, month to date; parts largest first. */
+  instance: { amount: number; parts: { name: InstancePart; amount: number }[] };
+  /** Every day from the 1st to today; `instance` is that day's share of the Claude Code instance. */
+  days: { date: string; amount: number; instance: number; estimated: boolean }[];
   /** When Cost Explorer was asked (epoch ms). */
   updatedAt: number;
 }
 
 const day = (d: Date) => d.toISOString().slice(0, 10);
+
+export type InstancePart = "Running time" | "Disk" | "Public IPv4";
+
+// Claude Code is the account's only EC2 instance, so its costs are told apart by usage type (one request, no tags):
+// its running time and CPU credits (EC2 - Compute), its EBS volume and snapshots (EC2 - Other) and its public IPv4
+// address (VPC). A second instance or volume in the account would be counted here as well.
+const INSTANCE_SERVICES = new Set(["Amazon Elastic Compute Cloud - Compute", "EC2 - Other", "Amazon Virtual Private Cloud"]);
+const INSTANCE_USAGE: [RegExp, InstancePart][] = [
+  [/(^|-)(BoxUsage|CPUCredits)(:|$)/, "Running time"],
+  [/(^|-)EBS:/, "Disk"],
+  [/(^|-)PublicIPv4:/, "Public IPv4"],
+];
+
+/** The instance part a cost line belongs to, from its service and usage type (e.g. "EU-EBS:VolumeUsage.gp3"). */
+export function instancePart(service: string, usageType: string): InstancePart | undefined {
+  if (!INSTANCE_SERVICES.has(service)) return undefined;
+  return INSTANCE_USAGE.find(([re]) => re.test(usageType))?.[1];
+}
 
 export async function monthCosts(now = new Date()): Promise<Costs> {
   const today = day(now);
@@ -40,7 +60,11 @@ export async function monthCosts(now = new Date()): Promise<Costs> {
     TimePeriod: { Start: first, End: tomorrow },
     Granularity: "DAILY" as const,
     Metrics: ["UnblendedCost"],
-    GroupBy: [{ Type: "DIMENSION" as const, Key: "SERVICE" }],
+    // By service and usage type in the same request: the services as before, and the instance's lines.
+    GroupBy: [
+      { Type: "DIMENSION" as const, Key: "SERVICE" },
+      { Type: "DIMENSION" as const, Key: "USAGE_TYPE" },
+    ],
   };
   const usage = ce.send(new GetCostAndUsageCommand(query)).catch((e: unknown) => {
     // Until the permissions boundary (infra/github/boundary-policy.json, "Costs") is published with admin credentials,
@@ -61,6 +85,7 @@ export async function monthCosts(now = new Date()): Promise<Costs> {
     });
 
   const byService = new Map<string, number>();
+  const byPart = new Map<InstancePart, number>();
   const days: Costs["days"] = [];
   let currency = "USD";
   let beforeToday = 0;
@@ -68,18 +93,27 @@ export async function monthCosts(now = new Date()): Promise<Costs> {
   let res = await usage;
   for (;;) {
     for (const r of res.ResultsByTime ?? []) {
-      let amount = 0;
+      const date = r.TimePeriod?.Start ?? "";
+      // A day can come back in two pages: add to it rather than adding it twice.
+      let d = days.at(-1);
+      if (d?.date !== date) {
+        d = { date, amount: 0, instance: 0, estimated: r.Estimated ?? false };
+        days.push(d);
+      }
       for (const g of r.Groups ?? []) {
         const m = g.Metrics?.["UnblendedCost"];
         const a = Number(m?.Amount ?? 0);
         if (m?.Unit) currency = m.Unit;
-        amount += a;
+        d.amount += a;
+        if (date < today) beforeToday += a;
         const name = g.Keys?.[0] ?? "Other";
         byService.set(name, (byService.get(name) ?? 0) + a);
+        const part = instancePart(name, g.Keys?.[1] ?? "");
+        if (part) {
+          d.instance += a;
+          byPart.set(part, (byPart.get(part) ?? 0) + a);
+        }
       }
-      const date = r.TimePeriod?.Start ?? "";
-      days.push({ date, amount, estimated: r.Estimated ?? false });
-      if (date < today) beforeToday += amount;
     }
     token = res.NextPageToken;
     if (!token) break;
@@ -97,6 +131,13 @@ export async function monthCosts(now = new Date()): Promise<Costs> {
       .map(([name, amount]) => ({ name, amount }))
       .filter((s) => s.amount >= 0.005)
       .sort((a, b) => b.amount - a.amount),
+    instance: {
+      amount: [...byPart.values()].reduce((s, a) => s + a, 0),
+      parts: [...byPart]
+        .map(([name, amount]) => ({ name, amount }))
+        .filter((p) => p.amount >= 0.005)
+        .sort((a, b) => b.amount - a.amount),
+    },
     days,
     updatedAt: now.getTime(),
   };

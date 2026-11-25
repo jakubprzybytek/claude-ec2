@@ -7,7 +7,7 @@ import type { Polled } from "./usePoll.ts";
 /** Services shown by name; the rest are summed up as "Other". */
 const TOP = 6;
 
-/** The AWS account's costs this month (Cost Explorer): month to date, forecast, by day and by service. */
+/** The AWS account's costs this month (Cost Explorer): month to date, forecast, the Claude Code instance's share, by day and by service. */
 export function CostsCard({ costs: polled }: { costs: Polled<CostsAnswer> }) {
   const { data, error } = polled;
   const c = data && "unavailable" in data ? undefined : data;
@@ -47,6 +47,20 @@ export function CostsCard({ costs: polled }: { costs: Polled<CostsAnswer> }) {
                 </div>
               </div>
             )}
+            <div>
+              <div className="muted small">
+                <span className="swatch instance" aria-hidden="true" />
+                Claude Code instance
+              </div>
+              <div className="figure" data-testid="costs-instance">
+                {money(c.instance.amount)}
+              </div>
+              {c.instance.parts.length > 0 && (
+                <div className="muted small" data-testid="costs-instance-parts">
+                  {c.instance.parts.map((p) => `${p.name} ${money(p.amount)}`).join(" · ")}
+                </div>
+              )}
+            </div>
           </div>
 
           <DailyBars days={c.days} money={money} dayName={dayName} hover={hover} setHover={setHover} />
@@ -115,11 +129,15 @@ function DailyBars({
       <figcaption className="small">
         {shown ? (
           <>
-            <strong>{dayName(shown.date)}</strong>: {money(shown.amount)}
+            <strong>{dayName(shown.date)}</strong>: {money(shown.amount)}, instance {money(shown.instance)}
             {shown.estimated ? <span className="muted"> (estimate, so far)</span> : null}
           </>
         ) : (
-          <span className="muted">By day · highest {money(max)}</span>
+          <span className="muted">
+            By day · highest {money(max)} · <span className="swatch instance" aria-hidden="true" />
+            instance <span className="swatch rest" aria-hidden="true" />
+            the rest
+          </span>
         )}
       </figcaption>
       <div className="bars">
@@ -128,12 +146,14 @@ function DailyBars({
             type="button"
             key={d.date}
             className={`bar${d.estimated ? " estimated" : ""}${hover === i ? " on" : ""}`}
-            aria-label={`${dayName(d.date)}: ${money(d.amount)}${d.estimated ? ", estimate" : ""}`}
+            aria-label={`${dayName(d.date)}: ${money(d.amount)}, instance ${money(d.instance)}${d.estimated ? ", estimate" : ""}`}
             onMouseEnter={() => setHover(i)}
             onFocus={() => setHover(i)}
             onClick={() => setHover(i)}
           >
-            <span style={{ height: `${Math.max(d.amount > 0 ? 2 : 0, (d.amount / max) * 100)}%` }} />
+            <span className="stack" style={{ height: `${Math.max(d.amount > 0 ? 2 : 0, (d.amount / max) * 100)}%` }}>
+              <span className="instance" style={{ height: `${d.amount > 0 ? Math.min(100, (d.instance / d.amount) * 100) : 0}%` }} />
+            </span>
           </button>
         ))}
       </div>

@@ -6,6 +6,18 @@
 
 declare module "sst" {
   export interface Resource {
+    "Api": {
+      "type": "sst.aws.ApiGatewayV2"
+      "url": string
+    }
+    "ApiHandler": {
+      "name": string
+      "type": "sst.aws.Function"
+    }
+    "Router": {
+      "type": "sst.aws.Router"
+      "url": string
+    }
     "TestUser": {
       "apiUrl": string
       "clientId": string
@@ -16,6 +28,10 @@ declare module "sst" {
     "TestUserPassword": {
       "type": "sst.sst.Secret"
       "value": string
+    }
+    "Web": {
+      "type": "sst.aws.StaticSite"
+      "url": string
     }
   }
 }

@@ -116,6 +116,8 @@ export interface Costs {
   total: number;
   forecast: number | null;
   services: { name: string; amount: number }[];
-  days: { date: string; amount: number; estimated: boolean }[];
+  /** The Claude Code instance, month to date: running time, disk, public IPv4. */
+  instance: { amount: number; parts: { name: string; amount: number }[] };
+  days: { date: string; amount: number; instance: number; estimated: boolean }[];
   updatedAt: number;
 }
