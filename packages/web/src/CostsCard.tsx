@@ -4,6 +4,9 @@ import { time } from "./format.ts";
 import { CardHeader, Skeleton } from "./ui.tsx";
 import type { Polled } from "./usePoll.ts";
 
+/** The app's services named under its figure; the rest are summed up. */
+const APP_TOP = 3;
+
 /** Services shown by name; the rest are summed up as "Other". */
 const TOP = 6;
 
@@ -61,6 +64,24 @@ export function CostsCard({ costs: polled }: { costs: Polled<CostsAnswer> }) {
                 </div>
               )}
             </div>
+            {c.app && (
+              <div>
+                <div className="muted small">{c.app.name} app (tagged resources)</div>
+                <div className="figure" data-testid="costs-app">
+                  {money(c.app.amount)}
+                </div>
+                <div className="muted small" data-testid="costs-app-services">
+                  {c.app.services.length === 0
+                    ? "No tagged costs yet"
+                    : [
+                        ...c.app.services.slice(0, APP_TOP).map((s) => `${shortService(s.name)} ${money(s.amount)}`),
+                        ...(c.app.services.length > APP_TOP
+                          ? [`other ${money(c.app.services.slice(APP_TOP).reduce((t, s) => t + s.amount, 0))}`]
+                          : []),
+                      ].join(" · ")}
+                </div>
+              </div>
+            )}
           </div>
 
           <DailyBars days={c.days} money={money} dayName={dayName} hover={hover} setHover={setHover} />
@@ -93,12 +114,19 @@ export function CostsCard({ costs: polled }: { costs: Polled<CostsAnswer> }) {
             </button>
           )}
           <p className="muted small">
-            The whole AWS account, tax included; today's costs are partial. Cost Explorer, as of {time(c.updatedAt / 1000)}.
+            The whole AWS account, tax included; today's costs are partial. The app's figure counts its resources tagged{" "}
+            <code>sst:app</code> (every stage), only while they carried the tag: the Claude Code instance since 25 Nov 2026. Cost
+            Explorer, as of {time(c.updatedAt / 1000)}.
           </p>
         </>
       )}
     </section>
   );
+}
+
+/** "Amazon Elastic Compute Cloud - Compute" → "Elastic Compute Cloud - Compute", "AWS Lambda" → "Lambda". */
+function shortService(name: string) {
+  return name.replace(/^(Amazon|AWS)\s+/, "");
 }
 
 function serviceRows(services: Costs["services"], all: boolean) {

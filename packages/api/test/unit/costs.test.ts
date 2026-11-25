@@ -1,7 +1,7 @@
 import { CostExplorerClient, GetCostAndUsageCommand, GetCostForecastCommand } from "@aws-sdk/client-cost-explorer";
 import { mockClient } from "aws-sdk-client-mock";
 import { beforeEach, describe, expect, it } from "vitest";
-import { CACHE_MS, cachedMonthCosts, clearCostsCache, instancePart, monthCosts, NO_ACCESS } from "../../src/costs.ts";
+import { APP_TAG, CACHE_MS, cachedMonthCosts, clearCostsCache, instancePart, monthCosts, NO_ACCESS } from "../../src/costs.ts";
 import { HttpError } from "../../src/instance.ts";
 
 const ce = mockClient(CostExplorerClient);
@@ -19,11 +19,18 @@ const day = (date: string, lines: Record<string, number>, estimated = false) => 
 
 const COMPUTE = "Amazon Elastic Compute Cloud - Compute";
 
+/** The request for this app's tagged resources (the others have no filter). */
+const APP_FILTER = { Filter: { Tags: { Key: APP_TAG.key, Values: [APP_TAG.value] } } };
+const accountCalls = () => ce.commandCalls(GetCostAndUsageCommand).filter((c) => !c.args[0].input.Filter);
+
 beforeEach(() => {
   ce.reset();
   clearCostsCache();
   ce.on(GetCostAndUsageCommand).resolves({
     ResultsByTime: [day("2026-11-01", { EC2: 1, S3: 0.5 }), day("2026-11-02", { EC2: 2, Tiny: 0.001 }), day("2026-11-03", { EC2: 0.25 }, true)],
+  });
+  ce.on(GetCostAndUsageCommand, APP_FILTER).resolves({
+    ResultsByTime: [{ TimePeriod: { Start: "2026-11-01", End: "" }, Groups: [{ Keys: ["AWS Lambda"], Metrics: { UnblendedCost: { Amount: "0.5", Unit: "USD" } } }, { Keys: [COMPUTE], Metrics: { UnblendedCost: { Amount: "1.25", Unit: "USD" } } }, { Keys: ["Tiny"], Metrics: { UnblendedCost: { Amount: "0.001", Unit: "USD" } } }] }],
   });
   ce.on(GetCostForecastCommand).resolves({ Total: { Amount: "40", Unit: "USD" } });
 });
@@ -42,7 +49,7 @@ describe("month costs", () => {
       ["2026-11-02", false],
       ["2026-11-03", true],
     ]);
-    expect(ce.commandCalls(GetCostAndUsageCommand)[0]!.args[0].input.TimePeriod).toEqual({ Start: "2026-11-01", End: "2026-11-04" });
+    expect(accountCalls()[0]!.args[0].input.TimePeriod).toEqual({ Start: "2026-11-01", End: "2026-11-04" });
     expect(ce.commandCalls(GetCostForecastCommand)[0]!.args[0].input.TimePeriod).toEqual({ Start: "2026-11-03", End: "2026-12-01" });
   });
 
@@ -66,7 +73,7 @@ describe("month costs", () => {
     ]);
     // The services are still summed over their usage types.
     expect(c.services[0]).toEqual({ name: "Amazon DynamoDB", amount: 1 });
-    expect(ce.commandCalls(GetCostAndUsageCommand)[0]!.args[0].input.GroupBy?.map((g) => g.Key)).toEqual(["SERVICE", "USAGE_TYPE"]);
+    expect(accountCalls()[0]!.args[0].input.GroupBy?.map((g) => g.Key)).toEqual(["SERVICE", "USAGE_TYPE"]);
   });
 
   it("counts only the instance's usage types", () => {
@@ -85,6 +92,27 @@ describe("month costs", () => {
     expect(c.days).toEqual([{ date: "2026-11-01", amount: 3, instance: 0, estimated: false }]);
   });
 
+  it("adds this app's tagged resources by service", async () => {
+    const c = await monthCosts(NOW);
+    expect(c.app).toEqual({
+      name: "claude-ec2",
+      amount: expect.closeTo(1.751),
+      services: [
+        { name: COMPUTE, amount: 1.25 },
+        { name: "AWS Lambda", amount: 0.5 },
+      ],
+    });
+    const call = ce.commandCalls(GetCostAndUsageCommand, APP_FILTER)[0]!.args[0].input;
+    expect(call).toMatchObject({ TimePeriod: { Start: "2026-11-01", End: "2026-11-04" }, Granularity: "MONTHLY", GroupBy: [{ Key: "SERVICE" }] });
+  });
+
+  it("shows the rest when the app's costs fail", async () => {
+    ce.on(GetCostAndUsageCommand, APP_FILTER).rejects(new Error("throttled"));
+    const c = await monthCosts(NOW);
+    expect(c.app).toBeNull();
+    expect(c.total).toBeCloseTo(3.751);
+  });
+
   it("shows the costs without a forecast when Cost Explorer has none", async () => {
     ce.on(GetCostForecastCommand).rejects(Object.assign(new Error("Insufficient amount of historical data"), { name: "DataUnavailableException" }));
     expect((await monthCosts(NOW)).forecast).toBeNull();
@@ -95,17 +123,17 @@ describe("month costs", () => {
       .resolvesOnce({ ResultsByTime: [day("2026-11-01", { EC2: 1 })], NextPageToken: "p2" })
       .resolves({ ResultsByTime: [day("2026-11-02", { EC2: 2 })] });
     expect((await monthCosts(NOW)).total).toBe(3);
-    expect(ce.commandCalls(GetCostAndUsageCommand)[1]!.args[0].input.NextPageToken).toBe("p2");
+    expect(accountCalls()[1]!.args[0].input.NextPageToken).toBe("p2");
   });
 
   it("asks Cost Explorer again only after the cache time or in a new month", async () => {
     await cachedMonthCosts(NOW);
     await Promise.all([cachedMonthCosts(new Date(NOW.getTime() + 1000)), cachedMonthCosts(new Date(NOW.getTime() + CACHE_MS - 1))]);
-    expect(ce.commandCalls(GetCostAndUsageCommand)).toHaveLength(1);
+    expect(accountCalls()).toHaveLength(1);
     await cachedMonthCosts(new Date(NOW.getTime() + CACHE_MS));
-    expect(ce.commandCalls(GetCostAndUsageCommand)).toHaveLength(2);
+    expect(accountCalls()).toHaveLength(2);
     await cachedMonthCosts(new Date("2026-12-01T00:00:00Z"));
-    expect(ce.commandCalls(GetCostAndUsageCommand)).toHaveLength(3);
+    expect(accountCalls()).toHaveLength(3);
   });
 
   it("says why when the role may not read Cost Explorer", async () => {

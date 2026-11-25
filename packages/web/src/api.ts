@@ -118,6 +118,8 @@ export interface Costs {
   services: { name: string; amount: number }[];
   /** The Claude Code instance, month to date: running time, disk, public IPv4. */
   instance: { amount: number; parts: { name: string; amount: number }[] };
+  /** This app's resources by the cost tag sst:app (every stage), by service; null when Cost Explorer could not say. */
+  app: { name: string; amount: number; services: { name: string; amount: number }[] } | null;
   days: { date: string; amount: number; instance: number; estimated: boolean }[];
   updatedAt: number;
 }

@@ -73,6 +73,8 @@ describe("API", () => {
     expect(instance.amount).toBeGreaterThan(0);
     expect(instance.parts.map((p) => p.name)).toEqual(expect.arrayContaining(["Running time", "Disk"]));
     expect(r.body["days"]).toContainEqual(expect.objectContaining({ instance: expect.any(Number) }));
+    // The app's tagged resources: a figure (possibly 0 while tag data catches up), by service.
+    expect(r.body["app"]).toMatchObject({ name: "claude-ec2", amount: expect.any(Number), services: expect.any(Array) });
   });
 
   describe("on the instance (when it is running)", () => {

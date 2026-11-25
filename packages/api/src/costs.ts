@@ -1,6 +1,7 @@
 // The AWS account's costs for the current month, from Cost Explorer: month to date by service and by day, and the
-// month-end forecast, and the Claude Code instance's share. Cost Explorer charges $0.01 a request and refreshes its data a few times a day, so the answer is
-// kept in the function's memory for CACHE_MS: one page load costs two requests at most, usually none.
+// month-end forecast, the Claude Code instance's share and this app's tagged resources. Cost Explorer charges $0.01 a
+// request and refreshes its data a few times a day, so the answer is kept in the function's memory for CACHE_MS: one
+// page load costs three requests at most, usually none.
 
 import { CostExplorerClient, GetCostAndUsageCommand, GetCostForecastCommand } from "@aws-sdk/client-cost-explorer";
 import { HttpError } from "./instance.ts";
@@ -24,6 +25,11 @@ export interface Costs {
   services: { name: string; amount: number }[];
   /** The Claude Code instance: running time, disk and public IPv4, month to date; parts largest first. */
   instance: { amount: number; parts: { name: InstancePart; amount: number }[] };
+  /**
+   * This app's resources by the cost allocation tag sst:app, every stage, month to date, by service (largest first);
+   * null when Cost Explorer could not say. Only usage while a resource carried the tag counts.
+   */
+  app: { name: string; amount: number; services: { name: string; amount: number }[] } | null;
   /** Every day from the 1st to today; `instance` is that day's share of the Claude Code instance. */
   days: { date: string; amount: number; instance: number; estimated: boolean }[];
   /** When Cost Explorer was asked (epoch ms). */
@@ -31,6 +37,9 @@ export interface Costs {
 }
 
 const day = (d: Date) => d.toISOString().slice(0, 10);
+
+/** The value of the cost allocation tag sst:app on this app's resources (the SST app's name). */
+export const APP_TAG = { key: "sst:app", value: "claude-ec2" };
 
 export type InstancePart = "Running time" | "Disk" | "Public IPv4";
 
@@ -74,6 +83,36 @@ export async function monthCosts(now = new Date()): Promise<Costs> {
       throw new HttpError(503, NO_ACCESS);
     }
     throw e;
+  });
+  // A request groups by two things at most: this app's costs (by its tag) are a request of their own.
+  const appQuery = {
+    TimePeriod: { Start: first, End: tomorrow },
+    Granularity: "MONTHLY" as const,
+    Metrics: ["UnblendedCost"],
+    Filter: { Tags: { Key: APP_TAG.key, Values: [APP_TAG.value] } },
+    GroupBy: [{ Type: "DIMENSION" as const, Key: "SERVICE" }],
+  };
+  const app = (async () => {
+    const byAppService = new Map<string, number>();
+    let next: string | undefined;
+    do {
+      const r = await ce.send(new GetCostAndUsageCommand({ ...appQuery, NextPageToken: next }));
+      for (const t of r.ResultsByTime ?? [])
+        for (const g of t.Groups ?? []) {
+          const name = g.Keys?.[0] ?? "Other";
+          byAppService.set(name, (byAppService.get(name) ?? 0) + Number(g.Metrics?.["UnblendedCost"]?.Amount ?? 0));
+        }
+      next = r.NextPageToken;
+    } while (next);
+    const services = [...byAppService]
+      .map(([name, amount]) => ({ name, amount }))
+      .filter((x) => x.amount >= 0.005)
+      .sort((a, b) => b.amount - a.amount);
+    return { name: APP_TAG.value, amount: [...byAppService.values()].reduce((a, b) => a + b, 0), services };
+  })().catch((e: unknown) => {
+    // Secondary: without it the rest still shows.
+    console.warn("GetCostAndUsage (app)", (e as Error).name, (e as Error).message);
+    return null;
   });
   const forecast = ce
     .send(new GetCostForecastCommand({ TimePeriod: { Start: today, End: nextMonth }, Granularity: "MONTHLY", Metric: "UNBLENDED_COST" }))
@@ -120,7 +159,7 @@ export async function monthCosts(now = new Date()): Promise<Costs> {
     res = await ce.send(new GetCostAndUsageCommand({ ...query, NextPageToken: token }));
   }
 
-  const rest = await forecast;
+  const [rest, appCosts] = await Promise.all([forecast, app]);
   return {
     month: today.slice(0, 7),
     currency,
@@ -138,6 +177,7 @@ export async function monthCosts(now = new Date()): Promise<Costs> {
         .filter((p) => p.amount >= 0.005)
         .sort((a, b) => b.amount - a.amount),
     },
+    app: appCosts,
     days,
     updatedAt: now.getTime(),
   };
