@@ -16,7 +16,7 @@ export interface Polled<T> {
 
 const CACHE_PREFIX = "claude-ec2:cache:";
 
-interface Cached<T> {
+export interface Cached<T> {
   data: T;
   at: number;
 }
@@ -53,13 +53,23 @@ export function clearCache() {
 /**
  * Loads `load()` now and again every `intervalMs` while the page is visible (0 or undefined: only on reload()).
  * `enabled` false clears nothing but stops loading. With `cacheKey`, the last answer is kept in localStorage and shown
- * at once on the next visit (`stale` until refreshed).
+ * at once on the next visit (`stale` until refreshed). With `fresh`, a cached answer it accepts is used as is: the first
+ * load is skipped (reload() still asks).
  */
-export function usePoll<T>(load: () => Promise<T>, intervalMs: number | undefined, enabled = true, cacheKey?: string): Polled<T> {
+export function usePoll<T>(
+  load: () => Promise<T>,
+  intervalMs: number | undefined,
+  enabled = true,
+  cacheKey?: string,
+  fresh?: (cached: Cached<T>, now: number) => boolean,
+): Polled<T> {
   const [initial] = useState(() => readCache<T>(cacheKey));
+  const [initialFresh] = useState(() => !!(initial && fresh?.(initial, Date.now())));
   const [data, setData] = useState<T | undefined>(initial?.data);
   const [fetchedAt, setFetchedAt] = useState<number | undefined>(initial?.at);
-  const [stale, setStale] = useState(initial !== undefined);
+  const [stale, setStale] = useState(initial !== undefined && !initialFresh);
+  // The first load is skipped once, when the cached answer is fresh.
+  const skipFirst = useRef(initialFresh);
   const [error, setError] = useState<string>();
   const [loading, setLoading] = useState(false);
   const loadRef = useRef(load);
@@ -95,7 +105,8 @@ export function usePoll<T>(load: () => Promise<T>, intervalMs: number | undefine
 
   useEffect(() => {
     if (!enabled) return;
-    void reload();
+    if (skipFirst.current) skipFirst.current = false;
+    else void reload();
     if (!intervalMs) return;
     const timer = setInterval(() => {
       if (document.visibilityState === "visible") void reload();

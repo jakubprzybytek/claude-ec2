@@ -39,3 +39,20 @@ test("a read-only user gets a clear message for actions", async ({ page }) => {
   await page.getByRole("button", { name: "Run" }).click();
   await expect(page.getByTestId("command-card").getByRole("alert")).toHaveText("Read-only access");
 });
+
+test("keeps the costs in the browser instead of asking again on the next visit", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.getByTestId("costs-total").or(page.getByTestId("costs-unavailable"))).toBeVisible({ timeout: 30_000 });
+  test.skip(await page.getByTestId("costs-unavailable").isVisible(), "Cost Explorer not available");
+
+  const asked: string[] = [];
+  page.on("request", (r) => new URL(r.url()).pathname.endsWith("/costs") && asked.push(r.url()));
+  await page.reload();
+  await expect(page.getByTestId("costs-app")).toBeVisible();
+  await expect(page.getByTestId("instance-state")).toBeVisible();
+  expect(asked).toEqual([]);
+
+  // The card's refresh button still asks.
+  await page.getByTestId("costs-card").getByRole("button", { name: /refresh/i }).click();
+  await expect.poll(() => asked.length).toBe(1);
+});

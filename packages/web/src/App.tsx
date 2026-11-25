@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { APP_VERSION, api, type CostsAnswer, type Details, type Instance, type Session, type Status } from "./api.ts";
 import { currentSession, logout, type Session as UserSession } from "./auth.ts";
 import { CommandCard } from "./CommandCard.tsx";
+import { COSTS_CACHE_KEY, costsFresh } from "./costsCache.ts";
 import { CostsCard } from "./CostsCard.tsx";
 import { DetailsCard } from "./DetailsCard.tsx";
 import { InstanceCard } from "./InstanceCard.tsx";
@@ -52,8 +53,9 @@ function Dashboard({ email, onLogout }: { email: string; onLogout: () => void })
     void status.reload();
   }
 
-  // Cost Explorer data changes a few times a day: once per visit, and on request.
-  const costs = usePoll(() => api<CostsAnswer>("GET", "/costs"), undefined, true, "costs");
+  // Cost Explorer data changes a few times a day and costs $0.01 a request: the last answer is kept in this browser
+  // (localStorage) and used for COSTS_FRESH_MS; then once per visit, and on request (the card's refresh button).
+  const costs = usePoll(() => api<CostsAnswer>("GET", "/costs"), undefined, true, COSTS_CACHE_KEY, costsFresh);
 
   return (
     <div className="page">
