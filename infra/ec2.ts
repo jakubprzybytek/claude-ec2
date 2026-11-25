@@ -18,7 +18,7 @@ export const launchTemplate = isProd
       {
         name: "claude-code-ubuntu-arm",
         // The description of the current version; a change here goes into the next version.
-        description: "Auto-stop fuse (fixed: no projects dir yet)",
+        description: "Cost tag sst:app on the instance, its volume and network interface",
         imageId: "resolve:ssm:/aws/service/canonical/ubuntu/server/24.04/stable/current/arm64/hvm/ebs-gp3/ami-id",
         instanceType: "t4g.medium",
         keyName: "aws-vscs",
@@ -29,7 +29,13 @@ export const launchTemplate = isProd
           { deviceName: "/dev/sda1", ebs: { encrypted: "true", deleteOnTermination: "true", volumeSize: 30, volumeType: "gp3" } },
         ],
         metadataOptions: { httpTokens: "required", httpEndpoint: "enabled" },
-        tagSpecifications: [{ resourceType: "instance", tags: { Name: INSTANCE_NAME_TAG } }],
+        // sst:app (an active cost allocation tag) puts the instance, its disk and its public IPv4 under the app in
+        // Cost Explorer; the instance running now was tagged by hand (2026-11-25).
+        tagSpecifications: [
+          { resourceType: "instance", tags: { Name: INSTANCE_NAME_TAG, "sst:app": "claude-ec2" } },
+          { resourceType: "volume", tags: { "sst:app": "claude-ec2" } },
+          { resourceType: "network-interface", tags: { "sst:app": "claude-ec2" } },
+        ],
         userData: Buffer.from(readFileSync("infra/ec2/user-data.sh", "utf8")).toString("base64"),
       },
       { import: TEMPLATE_ID, retainOnDelete: true, protect: true },
