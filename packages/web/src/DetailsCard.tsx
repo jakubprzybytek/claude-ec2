@@ -1,11 +1,12 @@
 import { useState } from "react";
 import { api, type Details } from "./api.ts";
 import { ago, duration, gb, time } from "./format.ts";
+import { expiresIn } from "./LoginCard.tsx";
 import { BusyButton, CardHeader, Skeleton } from "./ui.tsx";
 import { type Polled, useTick } from "./usePoll.ts";
 
 /** What the instance says about itself: the main Claude Code session, auto-stop, load, memory, disk. */
-export function DetailsCard({ details: polled }: { details: Polled<Details> }) {
+export function DetailsCard({ details: polled, onRenewLogin }: { details: Polled<Details>; onRenewLogin: () => void }) {
   const [busy, setBusy] = useState<number>();
   const [message, setMessage] = useState<string>();
   const { data: details, error } = polled;
@@ -60,6 +61,28 @@ export function DetailsCard({ details: polled }: { details: Polled<Details> }) {
               {details.claude.running ? "running" : "missing"}
               {details.claude.clients ? `, ${details.claude.clients} attached` : ""}
             </dd>
+            {details.auth && (
+              <>
+                <dt>Claude login</dt>
+                <dd data-testid="claude-login">
+                  {details.auth.loggedIn === null
+                    ? "unknown"
+                    : !details.auth.loggedIn
+                      ? "not logged in"
+                      : details.auth.expiresAt
+                        ? `expires ${expiresIn(details.auth.expiresAt, now)}`
+                        : "logged in"}
+                  {details.auth.loggedIn && (
+                    <>
+                      {" · "}
+                      <button type="button" className="link" onClick={onRenewLogin} data-testid="renew-login">
+                        renew
+                      </button>
+                    </>
+                  )}
+                </dd>
+              </>
+            )}
             {a?.installed && a.lastActivity && (
               <>
                 <dt>Last activity</dt>

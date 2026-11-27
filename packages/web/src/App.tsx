@@ -6,6 +6,7 @@ import { COSTS_CACHE_KEY, costsFresh } from "./costsCache.ts";
 import { CostsCard } from "./CostsCard.tsx";
 import { DetailsCard } from "./DetailsCard.tsx";
 import { InstanceCard } from "./InstanceCard.tsx";
+import { LoginCard } from "./LoginCard.tsx";
 import { LoginForm } from "./LoginForm.tsx";
 import { SessionsCard } from "./SessionsCard.tsx";
 import { Spinner } from "./ui.tsx";
@@ -37,6 +38,7 @@ export function App() {
 function Dashboard({ email, onLogout }: { email: string; onLogout: () => void }) {
   // EC2 state: often while it changes, else every 30 s. Shown at once from the last visit's answer, then refreshed.
   const [fast, setFast] = useState(false);
+  const [loginOpen, setLoginOpen] = useState(false);
   const status = usePoll(() => api<Status>("GET", "/status"), fast ? 4_000 : 30_000, true, "status");
   const state = status.data?.instance.state;
   const reachable = state === "running" && status.data?.ssmOnline === true;
@@ -72,8 +74,21 @@ function Dashboard({ email, onLogout }: { email: string; onLogout: () => void })
         <InstanceCard status={status} onChange={onInstanceChange} />
         {reachable && (
           <>
+            {details.data?.auth && (
+              <LoginCard
+                auth={details.data.auth}
+                now={details.data.now + (details.fetchedAt ? (Date.now() - details.fetchedAt) / 1000 : 0)}
+                open={loginOpen}
+                onClose={() => setLoginOpen(false)}
+                onLoggedIn={() => {
+                  void details.reload();
+                  // The main session restarts and registers with Remote Control within a few seconds.
+                  setTimeout(() => void sessions.reload(), 5_000);
+                }}
+              />
+            )}
             <SessionsCard sessions={sessions} />
-            <DetailsCard details={details} />
+            <DetailsCard details={details} onRenewLogin={() => setLoginOpen(true)} />
             <CommandCard />
           </>
         )}

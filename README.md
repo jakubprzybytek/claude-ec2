@@ -14,6 +14,7 @@ Control the Claude Code EC2 instance (eu-west-1, launch template `claude-code-ub
 - **Instance:** state, type, zone; start, stop, resize (when stopped, Graviton types only).
 - **Auto-stop and load:** when the instance will stop by itself and why (idle limit or uptime cap), snooze for 1-8 h, load, memory, disk.
 - **Claude Code sessions:** the main session and the spawned ones, each with its claude.ai link. **New session** starts `claude --remote-control <name>` in a tmux session on the instance, in a folder you pick, either as a new conversation or as a fork of a recent one, optionally with a first prompt. It shows up in claude.ai/code and the Claude app in a few seconds. **Close** ends it; the conversation is kept and can be forked later.
+- **Claude Code's login:** it lasts about a month. The page warns when it is missing (no session can start) or expires within a week, and logs in without a terminal: open the claude.ai sign-in link it shows, sign in, paste the code. The main session is restarted if it had exited. `claude-ec2 status` shows the login too.
 - **Run a command** as `ubuntu`, like `claude-ec2 exec`.
 - **The instance's costs this month:** the Claude Code instance's month-to-date costs (running time, disk, public IPv4: told apart by service and usage type, as it is the account's only instance), a bar per day. Cost Explorer charges $0.01 a request (one per refresh), so the page keeps the answer in the browser (localStorage) for 6 hours and asks again only after that, in a new month, or on the card's refresh button.
 

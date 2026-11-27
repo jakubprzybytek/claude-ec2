@@ -4,6 +4,7 @@ import type { APIGatewayProxyEventV2WithJWTAuthorizer, APIGatewayProxyResultV2 }
 import closeSh from "../../../remote/close.sh";
 import conversationsSh from "../../../remote/conversations.sh";
 import execSh from "../../../remote/exec.sh";
+import loginSh from "../../../remote/login.sh";
 import sessionsSh from "../../../remote/sessions.sh";
 import snoozeSh from "../../../remote/snooze.sh";
 import spawnSh from "../../../remote/spawn.sh";
@@ -25,6 +26,7 @@ interface Route {
 const NAME = /^[A-Za-z0-9][A-Za-z0-9_-]{0,39}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const HOME = "/home/ubuntu";
+const LOGIN_CODE = /^[A-Za-z0-9_#.~-]{8,1000}$/;
 
 const b64 = (s: string) => Buffer.from(s, "utf8").toString("base64");
 
@@ -123,6 +125,18 @@ export const routes: Record<string, Route> = {
       return json(await run((await requireReachable()).id, conversationsSh, [String(days)]));
     },
   },
+  // Claude Code's login on the instance (remote/login.sh): start shows the claude.ai sign-in URL, code finishes it
+  // with the code claude.ai shows after sign-in (and restarts the main session), cancel ends a login in progress.
+  "POST /login": { access: "full", run: async () => json(await run((await requireReachable()).id, loginSh, ["start"])) },
+  "POST /login/code": {
+    access: "full",
+    run: async (_p, body) => {
+      const code = str(body, "code", { required: true, max: 1000 })!.trim();
+      if (!LOGIN_CODE.test(code)) throw new HttpError(400, "That does not look like a sign-in code: paste the whole code claude.ai shows");
+      return json(await run((await requireReachable()).id, loginSh, ["code", b64(code)]));
+    },
+  },
+  "DELETE /login": { access: "full", run: async () => json(await run((await requireReachable()).id, loginSh, ["cancel"])) },
   // The Claude Code instance's costs this month (Cost Explorer: each request to it costs $0.01, so the answer is kept).
   // Without Cost Explorer access (yet) the answer says why, as a 200: the page shows it as a note, not as an error.
   "GET /costs": {

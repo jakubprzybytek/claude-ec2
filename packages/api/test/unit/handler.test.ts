@@ -82,7 +82,7 @@ describe("access", () => {
     expect(r.body["instance"]).toMatchObject({ id: "i-123", state: "stopped" });
   });
 
-  it.each(["POST /instance/start", "POST /instance/stop", "POST /instance/resize", "POST /autostop/snooze", "POST /commands", "POST /sessions", "DELETE /sessions/{name}", "GET /commands/{id}"])(
+  it.each(["POST /instance/start", "POST /instance/stop", "POST /instance/resize", "POST /autostop/snooze", "POST /commands", "POST /sessions", "DELETE /sessions/{name}", "GET /commands/{id}", "POST /login", "POST /login/code", "DELETE /login"])(
     "refuses %s to the read-only group, without touching AWS",
     async (route) => {
       instance("running");
@@ -210,6 +210,42 @@ describe("on the instance", () => {
     remoteAnswers("Closed x\n");
     expect((await call("DELETE /sessions/{name}", { path: { name: "x" } })).body).toEqual({ output: "Closed x" });
     expect(sent().args).toEqual(["x"]);
+  });
+
+  it("starts a Claude Code login and returns the sign-in URL", async () => {
+    instance("running");
+    remoteAnswers('{"url": "https://claude.ai/oauth/authorize?x"}\n');
+    expect((await call("POST /login")).body).toEqual({ url: "https://claude.ai/oauth/authorize?x" });
+    expect(sent().script).toContain("claude auth login");
+    expect(sent().args).toEqual(["start"]);
+  });
+
+  it("sends the sign-in code base64-encoded, trimmed", async () => {
+    instance("running");
+    remoteAnswers('{"loggedIn": true, "loginExpiresAt": "2026-12-26T05:15:52.998Z", "mainRestarted": true}\n');
+    const r = await call("POST /login/code", { body: { code: "  abc-DEF_123#state~.x \n" } });
+    expect(r.body).toEqual({ loggedIn: true, loginExpiresAt: "2026-12-26T05:15:52.998Z", mainRestarted: true });
+    expect(sent().args).toEqual(["code", Buffer.from("abc-DEF_123#state~.x").toString("base64")]);
+  });
+
+  it.each([{}, { code: "short" }, { code: "has space#x1234" }, { code: "a';rm -rf /#'x" }, { code: 42 }])("refuses the login code %j", async (body) => {
+    instance("running");
+    remoteAnswers("{}");
+    expect((await call("POST /login/code", { body })).status).toBe(400);
+    expect(ssm.commandCalls(SendCommandCommand)).toHaveLength(0);
+  });
+
+  it("passes a refused code on as 400", async () => {
+    instance("running");
+    remoteAnswers("", { status: "Failed", code: 3, stderr: "Couldn't log in: That code wasn't accepted.\nfailed to run commands: exit status 3" });
+    expect(await call("POST /login/code", { body: { code: "abcdefgh#ijk" } })).toEqual({ status: 400, body: { error: "Couldn't log in: That code wasn't accepted." } });
+  });
+
+  it("cancels a login", async () => {
+    instance("running");
+    remoteAnswers('{"cancelled": true}');
+    expect((await call("DELETE /login")).body).toEqual({ cancelled: true });
+    expect(sent().args).toEqual(["cancel"]);
   });
 
   it("starts a command and reads its result later", async () => {

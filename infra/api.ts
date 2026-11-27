@@ -83,6 +83,9 @@ for (const route of [
   "POST /sessions",
   "DELETE /sessions/{name}",
   "GET /conversations",
+  "POST /login",
+  "POST /login/code",
+  "DELETE /login",
   "GET /costs",
 ]) {
   api.route(route, handler.arn, auth);

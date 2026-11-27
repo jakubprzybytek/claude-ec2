@@ -17,6 +17,7 @@ test("shows the instance and, when it runs, its sessions and details", async ({ 
     await expect(page.getByTestId("session").filter({ hasText: "main" })).toBeVisible();
     await expect(page.getByTestId("main-session")).toHaveText(/running|missing/);
     await expect(page.getByTestId("autostop")).toContainText("Stops in");
+    await expect(page.getByTestId("claude-login")).toHaveText(/expires in|logged in|not logged in|unknown/);
 
     // The new-session form loads the conversations and folders; it is not submitted.
     await page.getByTestId("new-session").click();
@@ -55,4 +56,21 @@ test("keeps the costs in the browser instead of asking again on the next visit",
   // The card's refresh button still asks.
   await page.getByTestId("costs-card").getByRole("button", { name: /refresh/i }).click();
   await expect.poll(() => asked.length).toBe(1);
+});
+
+test("warns when Claude Code is logged out and offers to log in", async ({ page }) => {
+  // The instance's answer is changed in the browser only: logged out. The read-only test user's login is refused.
+  await page.route("**/status/details", async (route) => {
+    const res = await route.fetch();
+    const body = await res.json();
+    await route.fulfill({ response: res, json: { ...body, auth: { loggedIn: false, method: "none", expiresAt: null, loginInProgress: false } } });
+  });
+  await page.goto("/");
+  if ((await page.getByTestId("instance-state").textContent())?.trim() !== "running") test.skip(true, "the instance is not running");
+  const card = page.getByTestId("login-card");
+  await expect(card).toContainText("Claude Code is not logged in");
+  await expect(page.getByTestId("claude-login")).toHaveText("not logged in");
+  await page.getByTestId("login-start").click();
+  await expect(card.getByRole("alert").last()).toContainText("Read-only");
+  await expect(page.getByTestId("login-start")).toHaveText("Start again");
 });

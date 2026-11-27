@@ -59,6 +59,8 @@ export interface Details {
   memory: { total: number; available: number };
   disk: { total: number; used: number };
   claude: { running: boolean; clients: number; spawned: number };
+  /** Missing from an instance whose status.sh predates it. */
+  auth?: Auth;
   autostop:
     | { installed: false }
     | {
@@ -73,6 +75,16 @@ export interface Details {
         reason: string;
         estimate?: boolean;
       };
+}
+
+/** Claude Code's login on the instance (remote/status.sh); loggedIn null when `claude auth status` failed. */
+export interface Auth {
+  loggedIn: boolean | null;
+  method?: string | null;
+  /** Epoch seconds. */
+  expiresAt?: number | null;
+  loginInProgress?: boolean;
+  error?: string;
 }
 
 export interface Session {

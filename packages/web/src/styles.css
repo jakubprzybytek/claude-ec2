@@ -228,6 +228,31 @@ pre {
   color: var(--danger);
 }
 
+.card.notice {
+  border-left: 4px solid var(--busy);
+}
+
+.card.notice.danger {
+  border-left-color: var(--danger);
+}
+
+.card.notice p {
+  margin: 0 0 8px;
+}
+
+.login-steps ol {
+  margin: 0 0 10px;
+  padding-left: 1.3em;
+}
+
+.login-steps input {
+  font: inherit;
+  background: var(--card);
+  color: var(--text);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  width: 100%;
+}
+
 .stops {
   margin: 0;
 }

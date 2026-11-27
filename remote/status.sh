@@ -2,7 +2,7 @@
 # Status of the Claude Code instance, as JSON (runs as root). Mirrors claude-autostop's rules (infra/ec2/user-data.sh):
 # it checks every 5 minutes, then waits GRACE_MINUTES before the shutdown.
 exec python3 - "$@" <<'PY'
-import glob, json, os, shutil, subprocess, time
+import calendar, glob, json, os, shutil, subprocess, time
 
 def run(*cmd):
     r = subprocess.run(cmd, capture_output=True, text=True)
@@ -37,6 +37,22 @@ out = {
         "spawned": sum(1 for s in sessions.split() if s.startswith("cc-")),
     },
 }
+
+# Claude Code's login (claude.ai): without it no session starts. It lasts about a month (loginExpiresAt), then has
+# to be renewed (remote/login.sh). A login in progress is the tmux session "login-claude".
+def auth():
+    r = subprocess.run(["sudo", "-u", "ubuntu", "-H", "/home/ubuntu/.local/bin/claude", "auth", "status"], capture_output=True, text=True, timeout=20)
+    s = json.loads(r.stdout)
+    expires = s.get("loginExpiresAt")
+    if expires:
+        expires = calendar.timegm(time.strptime(expires[:19], "%Y-%m-%dT%H:%M:%S"))
+    return {"loggedIn": bool(s.get("loggedIn")), "method": s.get("authMethod"), "expiresAt": expires or None}
+
+try:
+    out["auth"] = auth()
+except Exception as e:  # unknown: not shown as logged out
+    out["auth"] = {"loggedIn": None, "error": str(e)[:200]}
+out["auth"]["loginInProgress"] = tmux("has-session", "-t", "=login-claude")[0] == 0
 
 conf = {"IDLE_MINUTES": 60, "MAX_UPTIME_HOURS": 8, "LOAD_THRESHOLD": 0.5, "GRACE_MINUTES": 5}
 if not os.path.exists("/usr/local/bin/claude-autostop"):

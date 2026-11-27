@@ -426,6 +426,28 @@ fn hm(seconds: i64) -> String {
     format!("{}h {:02}m", s / 3600, s % 3600 / 60)
 }
 
+/// Claude Code's login on the instance (status.sh's "auth"): without it no session starts; it lasts about a month.
+fn login_line(auth: &Value, now: i64) -> String {
+    const FIX: &str = "log in from the web app, or `claude-ec2 attach` and /login";
+    match auth["loggedIn"].as_bool() {
+        None if auth.is_null() => "unknown (the instance's status script predates it)".to_string(),
+        None => format!(
+            "unknown ({})",
+            auth["error"]
+                .as_str()
+                .unwrap_or("claude auth status failed")
+        ),
+        Some(false) => format!("NOT LOGGED IN: no Claude Code session can start; {FIX}"),
+        Some(true) => match auth["expiresAt"].as_i64() {
+            Some(at) if at - now < 7 * 86_400 => {
+                format!("expires in {}: renew it soon; {FIX}", hm(at - now))
+            }
+            Some(at) => format!("logged in, expires in {} days", (at - now) / 86_400),
+            None => "logged in".to_string(),
+        },
+    }
+}
+
 fn cmd_status(aws: &Aws, id: &str) -> Result<()> {
     let inst = describe(aws, id)?;
     println!(
@@ -455,6 +477,7 @@ fn cmd_status(aws: &Aws, id: &str) -> Result<()> {
         c["clients"].as_i64().unwrap_or(0),
         c["spawned"].as_i64().unwrap_or(0)
     );
+    println!("Login      {}", login_line(&v["auth"], now));
     let a = &v["autostop"];
     if a["installed"].as_bool() != Some(true) {
         println!("Auto-stop  not installed");
@@ -710,6 +733,27 @@ fn main() -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn login_line_warns_when_logged_out_or_expiring() {
+        let now = 1_800_000_000;
+        assert!(login_line(&json!({"loggedIn": false}), now).starts_with("NOT LOGGED IN"));
+        assert_eq!(
+            login_line(
+                &json!({"loggedIn": true, "expiresAt": now + 20 * 86_400 + 60}),
+                now
+            ),
+            "logged in, expires in 20 days"
+        );
+        assert!(
+            login_line(&json!({"loggedIn": true, "expiresAt": now + 3 * 3600}), now)
+                .starts_with("expires in 3h 00m: renew it soon")
+        );
+        assert!(
+            login_line(&json!({"loggedIn": null, "error": "timeout"}), now).contains("timeout")
+        );
+        assert!(login_line(&Value::Null, now).starts_with("unknown"));
+    }
 
     #[test]
     fn command_line_passes_script_and_arguments_through_sh() {
